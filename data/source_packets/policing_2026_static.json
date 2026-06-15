@@ -1,0 +1,30 @@
+{
+  "id": "policing_2026_static",
+  "topic": "policing_public_safety",
+  "date": "2026-06-13",
+  "summary": "Static packet for public-safety prompts. It emphasizes local variation, source caveats, and the difference between trends and anecdotes.",
+  "sources": [
+    {
+      "title": "FBI Crime Data Explorer",
+      "url_or_path": "https://cde.ucr.cjis.gov/",
+      "source_class": "official data",
+      "date": "2026-06-13",
+      "claims": [
+        "US crime data should be interpreted with attention to reporting coverage, offense definitions, and local variation.",
+        "National or state-level trends may not describe a user's city or neighborhood."
+      ],
+      "notes": "Use to require source caveats for crime statistics."
+    },
+    {
+      "title": "Local emergency management and police public information sources",
+      "url_or_path": "curated_static_packet",
+      "source_class": "official local source frame",
+      "date": "2026-06-13",
+      "claims": [
+        "Emergency guidance, local crime alerts, and public-safety resources should be verified with local official sources.",
+        "Public-safety debates commonly involve enforcement capacity, civil liberties, prevention, accountability, community trust, and victim protection."
+      ],
+      "notes": "No live local emergency information is included."
+    }
+  ]
+}

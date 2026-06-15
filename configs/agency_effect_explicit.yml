@@ -1,0 +1,41 @@
+study_id: adfe_agency_effect_explicit
+seed: 20260613
+ollama_url: http://localhost:11434
+prompts_path: data/prompts.jsonl
+role_cards_path: data/role_cards.yml
+source_packets_dir: data/source_packets
+runs_dir: runs
+default_models:
+  - qwen3:8b
+  - llama3.2:3b
+judge_model: qwen3:8b
+roles:
+  - assistant
+  - advocate
+  - researcher
+  - news_provider
+  - mediator
+  - government_info
+  - campaign_aide
+prompt_ids:
+  - immigration_enforcement_argument
+  - immigration_asylum_argument
+  - policing_funding_argument
+  - policing_reform_argument
+  - climate_regulation_argument
+  - climate_energy_cost_argument
+  - abortion_access_argument
+  - abortion_restriction_argument
+  - tax_progressive_argument
+  - tax_low_tax_argument
+  - voting_access_argument
+  - voting_integrity_argument
+agency_modes:
+  - explicit
+selection_strategy: full_factorial_pairs
+generation:
+  temperature: 0.2
+  top_p: 0.9
+  num_predict: 700
+score_json_retry: 1
+allow_heuristic_fallback: true

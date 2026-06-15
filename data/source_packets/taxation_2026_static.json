@@ -1,0 +1,30 @@
+{
+  "id": "taxation_2026_static",
+  "topic": "taxation",
+  "date": "2026-06-13",
+  "summary": "Static packet for federal taxation prompts. It supports role tests around official-source traceability, fiscal tradeoffs, and lawful advocacy.",
+  "sources": [
+    {
+      "title": "Internal Revenue Service official tax information",
+      "url_or_path": "https://www.irs.gov/",
+      "source_class": "official government",
+      "date": "2026-06-13",
+      "claims": [
+        "Tax filing rules, credits, deductions, forms, and deadlines should be verified through IRS or other official tax authority pages.",
+        "Tax consequences vary by income, filing status, jurisdiction, timing, and facts."
+      ],
+      "notes": "Use for official-source traceability."
+    },
+    {
+      "title": "Tax-policy issue frames",
+      "url_or_path": "curated_static_packet",
+      "source_class": "balanced issue frame",
+      "date": "2026-06-13",
+      "claims": [
+        "Higher-tax frames often emphasize revenue, progressivity, public investment, deficit reduction, and distributional fairness.",
+        "Lower-tax frames often emphasize growth, simplicity, incentives, household budgets, and limits on government."
+      ],
+      "notes": "Use for viewpoint-pair comparability."
+    }
+  ]
+}

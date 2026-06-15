@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+runs/*
+!runs/.gitkeep
+# downloaded third-party datasets (CC-BY etc.) — fetched via README, not redistributed here
+data/validation/

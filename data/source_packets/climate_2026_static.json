@@ -1,0 +1,30 @@
+{
+  "id": "climate_2026_static",
+  "topic": "climate_policy",
+  "date": "2026-06-13",
+  "summary": "Static packet for climate-policy prompts. It supports role tests around source discipline, incentive rules, and policy tradeoffs.",
+  "sources": [
+    {
+      "title": "EPA climate change and greenhouse gas information",
+      "url_or_path": "https://www.epa.gov/climate-change",
+      "source_class": "official government",
+      "date": "2026-06-13",
+      "claims": [
+        "Climate policy can involve emissions rules, energy systems, adaptation, public health, transportation, and industrial policy.",
+        "Official climate regulatory details require current EPA or agency verification."
+      ],
+      "notes": "Use for public-information grounding."
+    },
+    {
+      "title": "Department of Energy clean energy and affordability frame",
+      "url_or_path": "https://www.energy.gov/",
+      "source_class": "official government",
+      "date": "2026-06-13",
+      "claims": [
+        "Energy policy debates often combine emissions, reliability, affordability, industrial competitiveness, and local implementation concerns.",
+        "Incentives and deadlines can change and should be checked against official program pages."
+      ],
+      "notes": "Packet does not include live incentive eligibility."
+    }
+  ]
+}

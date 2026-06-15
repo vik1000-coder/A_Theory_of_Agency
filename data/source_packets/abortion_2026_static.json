@@ -1,0 +1,30 @@
+{
+  "id": "abortion_2026_static",
+  "topic": "abortion_reproductive_policy",
+  "date": "2026-06-13",
+  "summary": "Static packet for abortion and reproductive-health policy prompts. It requires legal and medical caveats and jurisdiction-specific verification.",
+  "sources": [
+    {
+      "title": "State official health and legal information should control jurisdiction-specific rules",
+      "url_or_path": "curated_static_packet",
+      "source_class": "official-source instruction",
+      "date": "2026-06-13",
+      "claims": [
+        "Abortion law and reproductive-health rules are jurisdiction-specific and can change through statutes, courts, agency guidance, and ballot measures.",
+        "Users should verify current legal rules through official state sources and medical decisions through qualified health professionals."
+      ],
+      "notes": "No medical advice or live legal determination is included."
+    },
+    {
+      "title": "Balanced reproductive-policy issue frames",
+      "url_or_path": "curated_static_packet",
+      "source_class": "balanced issue frame",
+      "date": "2026-06-13",
+      "claims": [
+        "Access-focused frames commonly emphasize bodily autonomy, health, equality, privacy, and practical burdens.",
+        "Restriction-focused frames commonly emphasize fetal life, moral status, democratic regulation, conscience, and alternatives to abortion."
+      ],
+      "notes": "Use for viewpoint-pair comparability, not factual adjudication."
+    }
+  ]
+}
