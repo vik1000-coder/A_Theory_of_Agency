@@ -639,6 +639,27 @@ def command_validate_judge(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_build_site(args: argparse.Namespace) -> int:
+    from .site import build_summary, write_site
+
+    root = Path.cwd()
+    run_dir = (root / "runs" / args.run_id) if args.run_id else None
+    if run_dir is not None and not (run_dir / "analysis.json").is_file():
+        console.print(f"[red]run {args.run_id} has no analysis.json (run `analyze` first)[/red]")
+        return 2
+    validation_dir = Path(args.validation_dir) if args.validation_dir else None
+    summary = build_summary(root, run_dir, validation_dir)
+    docs_dir = Path(args.docs_dir)
+    out = write_site(summary, docs_dir, now_iso())
+    prov = summary["provenance"]
+    judge = summary["judge_validation"]
+    console.print(f"Wrote {out}")
+    console.print(f"- run: {prov.get('run_id')} (contaminated={prov.get('contaminated')}, n_scores={prov.get('n_scores')})")
+    console.print(f"- judge: {judge.get('judge_model')} kappa={judge.get('cohen_kappa')} acc={judge.get('accuracy')}")
+    console.print(f"Commit {docs_dir}/ and push; GitHub Pages will redeploy.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="adfe_runner")
     parser.add_argument("--config", default="configs/publication_pilot.yml")
@@ -716,6 +737,13 @@ def build_parser() -> argparse.ArgumentParser:
     validate_judge.add_argument("--ollama-url", default="http://localhost:11434")
     validate_judge.add_argument("--runs-dir", default="runs")
     validate_judge.set_defaults(func=command_validate_judge)
+
+    build_site = sub.add_parser("build-site")
+    build_site.add_argument("--config", default=argparse.SUPPRESS)
+    build_site.add_argument("--run-id", help="run id under runs/; defaults to latest run with analysis.json")
+    build_site.add_argument("--validation-dir", help="judge_validation_* dir; defaults to latest")
+    build_site.add_argument("--docs-dir", default="docs")
+    build_site.set_defaults(func=command_build_site)
 
     return parser
 

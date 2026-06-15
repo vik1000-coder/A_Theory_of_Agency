@@ -12,6 +12,17 @@ uv sync --extra dev
 uv run python -m adfe_runner doctor
 ```
 
+## Public site
+
+A GitHub Pages site under [`docs/`](docs/) presents the problem, data, judge validation, and
+analysis. It renders from `docs/data/summary.js`, which is generated from run artifacts:
+
+```bash
+uv run python -m adfe_runner build-site --run-id <run_id>   # or no --run-id for the latest run
+```
+
+Commit and push `docs/` and Pages redeploys. Full workflow: [`docs/UPDATING.md`](docs/UPDATING.md).
+
 ## Methodology guardrails
 
 The harness was hardened after an audit found the original pipeline could manufacture its
