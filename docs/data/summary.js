@@ -124,6 +124,7 @@ window.ADFE_DATA = {
       }
     ]
   },
+  "judge_factuality": {},
   "agency_gradient": {
     "model_formula": "score ~ agency_level + (1 | model)",
     "n": 336,
@@ -281,5 +282,5 @@ window.ADFE_DATA = {
   "refusal_label_agreement": {
     "available": false
   },
-  "generated_at": "2026-06-15T20:25:52Z"
+  "generated_at": "2026-06-16T01:33:47Z"
 };
