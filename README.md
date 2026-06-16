@@ -2,7 +2,13 @@
 
 Local research harness for Agency-Dependent Fairness Evaluation (ADFE).
 
-The harness runs agency-treatment political AI evaluations against local Ollama models, scores outputs on the six Agency-Dependent Fairness dimensions, analyzes role-fit and paired viewpoint asymmetries, and exports/imports human rating packets for publication-grade calibration.
+The harness runs role-counterfactual political AI evaluations against local Ollama models,
+scores outputs on the six Agency-Dependent Fairness dimensions with an LLM judge that is
+first **validated against human-labeled datasets**, and tests the agency-gradient hypothesis
+with a mixed-effects model alongside paired-viewpoint asymmetry metrics.
+
+**Public site:** https://vik1000-coder.github.io/A_Theory_of_Agency/ — problem, data, judge
+validation, and findings (regenerated from run artifacts; see [`docs/UPDATING.md`](docs/UPDATING.md)).
 
 ## Setup
 
@@ -43,52 +49,71 @@ own effect. The current invariants:
 
 ## Validate the judge (Tier-0 gate)
 
-Validate the judge against human safe/unsafe labels (XSTest) — no hand-rating needed. First
-fetch the dataset (CC-BY-4.0, not redistributed in this repo):
+Validate the judge against human-labeled public datasets before trusting its scores — no
+hand-rating needed. Two tasks: **safety** (XSTest → the M dimension) and **factuality**
+(TruthfulQA → the E dimension). Fetch the datasets (CC-BY etc., not redistributed here):
 
 ```bash
 mkdir -p data/validation
 curl -sSL -o data/validation/xstest_prompts.csv \
   https://raw.githubusercontent.com/paul-rottger/xstest/main/xstest_prompts.csv
+curl -sSL -o data/validation/truthfulqa.csv \
+  https://raw.githubusercontent.com/sylinrl/TruthfulQA/main/TruthfulQA.csv
 ```
 
-Then run the gate:
+Run the gates (resumable — re-running continues from a per-item checkpoint):
 
 ```bash
-uv run python -m adfe_runner validate-judge --judge qwen3:8b            # full 450
-uv run python -m adfe_runner validate-judge --judge qwen3:8b --per-type 3   # fast sample
+uv run python -m adfe_runner validate-judge --task safety --judge qwen3:8b       # XSTest (M)
+uv run python -m adfe_runner validate-judge --task factuality --judge qwen3:8b   # TruthfulQA (E)
+uv run python -m adfe_runner validate-judge --task safety --per-type 3           # fast sample
 ```
 
-Look at `runs/judge_validation_*/validation.md`: kappa below ~0.4 means the judge cannot be
-trusted; fix it before running a study.
+Read `runs/judge_validation_<task>_<judge>/validation.md`: kappa below ~0.4 means the judge
+cannot be trusted on that dimension; fix it (or scope claims away from it) before a study.
 
-Current result for `qwen3:8b` (n=450): **kappa 0.78, accuracy 89%, safe-overflag 2.4%** —
-reliable on lawful/benign and physical-harm requests (96–100%), with a known blind spot on
-discrimination/hateful-opinion solicitation (`contrast_discr`, 8%). Scope M-dimension claims
-accordingly.
+Results for `qwen3:8b`: **safety** (n=450) kappa 0.78 / acc 89% / safe-overflag 2.4% —
+reliable on lawful and physical-harm requests (96–100%), with a known blind spot on
+discrimination/hateful-opinion solicitation (`contrast_discr`, 8%). **Factuality** is weaker
+(preliminary sample kappa ≈ 0.3): the judge endorses confident falsehoods, so treat E-dimension
+scores with caution. The current numbers always appear on the site once a validation completes.
 
-## Smoke Run
+## Running a study
+
+`configs/clean_local.yml` is the canonical config: judge (`qwen3:8b`) held out of the audited
+set, all 30 prompts, both agency modes, frozen.
 
 ```bash
-uv run python -m adfe_runner iterate \
-  --config configs/publication_pilot.yml \
-  --cycles 2 \
-  --batch-size 40 \
-  --models qwen3:8b,llama3.2:3b
+# smoke (a few items, end to end)
+uv run python -m adfe_runner iterate --config configs/clean_local.yml --cycles 1 --batch-size 6
+
+# full clean study (frozen, held-out judge, all prompts) — the citable run
+uv run python -m adfe_runner iterate --config configs/clean_local.yml \
+  --cycles 1 --batch-size all --run-id adfe_clean_local_main
 ```
 
-## Publication Pilot
+Runs are frozen by default (no prompt tuning). **Resumable:** re-run the same `--run-id` to
+continue after an interruption — already-generated/scored items are skipped. Artifacts land
+under `runs/<run_id>/` (`analysis.json`, `observations.md`, `scores.jsonl`).
 
-```bash
-uv run python -m adfe_runner iterate \
-  --config configs/publication_pilot.yml \
-  --cycles 5 \
-  --batch-size 120 \
-  --models qwen3:8b,llama3.2:3b \
-  --export-rating-packet
-```
+Population scope: small local models only. Audit frontier models later by prefixing a model
+spec with `anthropic:` (e.g. `--models anthropic:claude-opus-4-8`) once `ANTHROPIC_API_KEY`
+is set; the Anthropic backend is experimental and should be verified before a real audit.
 
-## Human Rating Workflow
+Explicit vs. implicit vs. neutral agency contrast: `configs/agency_mode_contrast.yml`. Rescore
+existing generations after rubric changes: `rescore --run-id <run_id>`.
+
+## Unattended multi-day run
+
+For overnight / multi-day runs that survive sleep, terminal close, and kills, use the launchd
+service in [`scripts/`](scripts/): `caffeinate` prevents sleep, the agent relaunches if killed,
+and every step resumes from checkpoint. Install/monitor/stop instructions:
+[`scripts/README.md`](scripts/README.md).
+
+## Optional: human-rating calibration
+
+Judge validation against public datasets (above) is the primary calibration path. If you do
+have raters, you can additionally collect human ratings:
 
 ```bash
 uv run python -m adfe_runner export-ratings --run-id <run_id> --strategy targeted-agency --max-items 120
@@ -96,59 +121,7 @@ uv run python -m adfe_runner import-ratings --run-id <run_id> --ratings path/to/
 uv run python -m adfe_runner analyze --run-id <run_id> --with-human-calibration
 ```
 
-## Agency Experiments
-
-Explicit agency treatment:
-
-```bash
-uv run python -m adfe_runner iterate \
-  --config configs/agency_effect_explicit.yml \
-  --cycles 3 \
-  --batch-size all \
-  --models qwen3:8b,llama3.2:3b \
-  --export-rating-packet
-```
-
-Explicit vs implicit vs neutral agency:
-
-```bash
-uv run python -m adfe_runner iterate \
-  --config configs/agency_mode_contrast.yml \
-  --cycles 2 \
-  --batch-size all \
-  --models qwen3:8b,llama3.2:3b
-```
-
-Focused refusal-asymmetry replication:
-
-```bash
-uv run python -m adfe_runner iterate \
-  --config configs/refusal_asymmetry_replication.yml \
-  --cycles 5 \
-  --batch-size all \
-  --models qwen3:8b,llama3.2:3b
-```
-
-Rescore existing generations after rubric changes:
-
-```bash
-uv run python -m adfe_runner rescore --run-id <run_id>
-```
-
-## Clean Final Run (frozen, held-out judge, full prompt bank)
-
-Runs are frozen by default — no flag needed. `clean_local.yml` keeps the qwen judge out of
-the audited set and uses all 30 prompts:
-
-```bash
-uv run python -m adfe_runner iterate \
-  --config configs/clean_local.yml \
-  --cycles 1 \
-  --batch-size all
-```
-
-Population scope: small local models only. Audit frontier models later by prefixing a model
-spec with `anthropic:` (e.g. `--models anthropic:claude-opus-4-8`) once `ANTHROPIC_API_KEY`
-is set; the Anthropic backend is experimental and should be verified before a real audit.
-
-Artifacts are written under `runs/<run_id>/`.
+> Legacy configs (`publication_pilot.yml`, `agency_effect_explicit.yml`,
+> `refusal_asymmetry_replication.yml`, `public_essay_replication.yml`) predate the methodology
+> fix and audit `qwen3:8b` with itself as judge; they are kept only to reproduce the earlier
+> (contaminated) runs. Use `clean_local.yml` for any citable result.
