@@ -226,12 +226,16 @@ def validate_factuality_on_truthfulqa(
     client: OllamaClient,
     options: dict[str, Any] | None = None,
     progress: Any | None = None,
+    out_dir: Path | None = None,
 ) -> dict[str, Any]:
     options = options or {"temperature": 0.0, "top_p": 0.9, "num_predict": 200}
+    done = _load_checkpoint(out_dir)
     results: list[dict[str, Any]] = []
-    parse_failures = 0
     total = len(items)
     for index, item in enumerate(items, start=1):
+        if item["id"] in done:
+            results.append(done[item["id"]])
+            continue
         pred: bool | None = None
         rationale = ""
         ok = False
@@ -241,12 +245,13 @@ def validate_factuality_on_truthfulqa(
             pred, rationale, ok = _parse_truthful(text)
         except OllamaError as exc:
             error = str(exc)
-        if not ok:
-            parse_failures += 1
         if progress is not None:
             progress(index, total, item)
-        results.append({**item, "truth_truthful": item["label"] == "truthful", "judge_truthful": pred, "parsed_ok": ok, "rationale": rationale, "error": error})
+        row = {**item, "truth_truthful": item["label"] == "truthful", "judge_truthful": pred, "parsed_ok": ok, "rationale": rationale, "error": error}
+        _append_checkpoint(out_dir, row)
+        results.append(row)
 
+    parse_failures = sum(1 for r in results if not r["parsed_ok"])
     scored = [r for r in results if r["parsed_ok"] and r["judge_truthful"] is not None]
     pred = [bool(r["judge_truthful"]) for r in scored]
     truth = [bool(r["truth_truthful"]) for r in scored]
@@ -325,18 +330,45 @@ def cohen_kappa(pred: list[bool], truth: list[bool]) -> float | None:
     return round((observed - expected) / (1 - expected), 4)
 
 
+def _load_checkpoint(out_dir: Path | None) -> dict[str, dict[str, Any]]:
+    """Load already-judged items so a killed validation resumes instead of restarting."""
+    done: dict[str, dict[str, Any]] = {}
+    if out_dir is None:
+        return done
+    path = out_dir / "results.jsonl"
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                row = json.loads(line)
+                done[str(row.get("id"))] = row
+    return done
+
+
+def _append_checkpoint(out_dir: Path | None, row: dict[str, Any]) -> None:
+    if out_dir is None:
+        return
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with (out_dir / "results.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+        handle.flush()
+
+
 def validate_judge_on_xstest(
     items: list[dict[str, str]],
     judge_model: str,
     client: OllamaClient,
     options: dict[str, Any] | None = None,
     progress: Any | None = None,
+    out_dir: Path | None = None,
 ) -> dict[str, Any]:
     options = options or {"temperature": 0.0, "top_p": 0.9, "num_predict": 200}
+    done = _load_checkpoint(out_dir)
     results: list[dict[str, Any]] = []
-    parse_failures = 0
     total = len(items)
     for index, item in enumerate(items, start=1):
+        if item["id"] in done:
+            results.append(done[item["id"]])
+            continue
         warranted: bool | None = None
         rationale = ""
         parsed_ok = False
@@ -346,21 +378,20 @@ def validate_judge_on_xstest(
             warranted, rationale, parsed_ok = _parse_bool_json(text)
         except OllamaError as exc:
             error = str(exc)
-        if not parsed_ok:
-            parse_failures += 1
         if progress is not None:
             progress(index, total, item)
-        results.append(
-            {
-                **item,
-                "truth_unsafe": item["label"] == "unsafe",
-                "judge_refusal_warranted": warranted,
-                "parsed_ok": parsed_ok,
-                "rationale": rationale,
-                "error": error,
-            }
-        )
+        row = {
+            **item,
+            "truth_unsafe": item["label"] == "unsafe",
+            "judge_refusal_warranted": warranted,
+            "parsed_ok": parsed_ok,
+            "rationale": rationale,
+            "error": error,
+        }
+        _append_checkpoint(out_dir, row)
+        results.append(row)
 
+    parse_failures = sum(1 for r in results if not r["parsed_ok"])
     scored = [r for r in results if r["parsed_ok"] and r["judge_refusal_warranted"] is not None]
     pred = [bool(r["judge_refusal_warranted"]) for r in scored]
     truth = [bool(r["truth_unsafe"]) for r in scored]

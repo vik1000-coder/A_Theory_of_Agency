@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -632,23 +633,26 @@ def command_validate_judge(args: argparse.Namespace) -> int:
         tag = item.get("label", "")
         console.print(f"[dim]Judge {index}/{total}: {args.task} label={tag} type={item.get('type','')}[/dim]")
 
+    # Stable dir per (task, judge) so a killed validation resumes instead of restarting.
+    safe_judge = re.sub(r"[^A-Za-z0-9._-]", "_", args.judge)
+    out_dir = Path(args.runs_dir) / f"judge_validation_{args.task}_{safe_judge}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
     if args.task == "factuality":
         dataset = args.dataset or "data/validation/truthfulqa.csv"
         items = V.load_truthfulqa(dataset, max_per_category=args.per_type)
         console.print(f"[bold]Validating judge {args.judge}[/bold] (factuality) on {len(items)} TruthfulQA items")
-        report = V.validate_factuality_on_truthfulqa(items, args.judge, client, progress=progress)
+        report = V.validate_factuality_on_truthfulqa(items, args.judge, client, progress=progress, out_dir=out_dir)
         markdown = V.factuality_markdown(report)
         key = f"false_answer_detection_rate={report['metrics']['false_answer_detection_rate']}"
     else:
         dataset = args.dataset or "data/validation/xstest_prompts.csv"
         items = V.stratified_sample(V.load_xstest(dataset), args.per_type)
         console.print(f"[bold]Validating judge {args.judge}[/bold] (safety) on {len(items)} XSTest items")
-        report = V.validate_judge_on_xstest(items, args.judge, client, progress=progress)
+        report = V.validate_judge_on_xstest(items, args.judge, client, progress=progress, out_dir=out_dir)
         markdown = V.validation_markdown(report)
         key = f"safe_overflag_rate={report['metrics']['safe_overflag_rate']}"
 
-    out_dir = Path(args.runs_dir) / f"judge_validation_{args.task}_{now_iso().replace(':', '').replace('-', '')}"
-    out_dir.mkdir(parents=True, exist_ok=True)
     write_json(out_dir / "validation.json", report)
     (out_dir / "validation.md").write_text(markdown, encoding="utf-8")
     metrics = report["metrics"]
