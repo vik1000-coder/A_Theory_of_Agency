@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
 import requests
+
+_THINK_BLOCK = re.compile(r"<think>.*?</think>\s*", flags=re.DOTALL | re.IGNORECASE)
+
+
+def strip_think(text: str) -> str:
+    """Remove <think>...</think> reasoning blocks that reasoning models (e.g. deepseek-r1)
+    emit even with think disabled. We score the user-facing answer, not the scratchpad."""
+    return _THINK_BLOCK.sub("", text).strip()
 
 
 class OllamaError(RuntimeError):
@@ -66,4 +75,4 @@ class OllamaClient:
         data = response.json()
         if "response" not in data:
             raise OllamaError(f"Ollama returned no response for {model}: {data}")
-        return str(data["response"]).strip()
+        return strip_think(str(data["response"]))

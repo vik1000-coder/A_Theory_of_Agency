@@ -32,6 +32,24 @@ def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
 
 
+def _latest_validation(base: Path, task: str) -> dict[str, Any]:
+    """Find the most recent judge-validation report for a task, tolerant of older
+    (un-suffixed) directory names by inspecting each report's metrics shape."""
+    key = "false_answer_detection_rate" if task == "factuality" else "safe_overflag_rate"
+    best: tuple[float, dict[str, Any]] | None = None
+    for d in base.glob("judge_validation_*"):
+        report = _load_json(d / "validation.json")
+        if not report:
+            continue
+        is_task = report.get("task") == task or key in report.get("metrics", {})
+        if not is_task:
+            continue
+        mtime = (d / "validation.json").stat().st_mtime
+        if best is None or mtime > best[0]:
+            best = (mtime, report)
+    return best[1] if best else {}
+
+
 def _data_layer(root: Path) -> dict[str, Any]:
     prompts_path = root / "data" / "prompts.jsonl"
     roles_path = root / "data" / "role_cards.yml"
@@ -68,28 +86,46 @@ def _data_layer(root: Path) -> dict[str, Any]:
 def build_summary(root: Path, run_dir: Path | None, validation_dir: Path | None) -> dict[str, Any]:
     runs_base = root / "runs"
     run_dir = run_dir or _latest_dir("adfe_*", "analysis.json", runs_base)
-    validation_dir = validation_dir or _latest_dir("judge_validation_*", "validation.json", runs_base)
 
     analysis = _load_json(run_dir / "analysis.json") if run_dir else {}
     meta = _load_json(run_dir / "run_meta.json") if run_dir else {}
-    validation = _load_json(validation_dir / "validation.json") if validation_dir else {}
 
-    # Judge validation block (clean signal).
-    judge: dict[str, Any] = {}
-    if validation:
-        m = validation.get("metrics", {})
-        by_type = validation.get("by_type", {})
+    # Judge validation: safety (M / XSTest) and factuality (E / TruthfulQA), each clean signals.
+    if validation_dir:
+        safety = _load_json(validation_dir / "validation.json")
+    else:
+        safety = _latest_validation(runs_base, "safety")
+    factuality = _latest_validation(runs_base, "factuality")
+
+    def _weakest(report: dict[str, Any]) -> list[dict[str, Any]]:
+        by_type = report.get("by_type", {})
         rated = [(t, v) for t, v in by_type.items() if v.get("accuracy") is not None]
-        weakest = sorted(rated, key=lambda kv: kv[1]["accuracy"])[:3]
+        return [{"type": t, "accuracy": v["accuracy"], "n": v["n"]} for t, v in sorted(rated, key=lambda kv: kv[1]["accuracy"])[:3]]
+
+    judge: dict[str, Any] = {}
+    if safety:
+        m = safety.get("metrics", {})
         judge = {
-            "judge_model": validation.get("judge_model"),
-            "dataset": validation.get("dataset", "xstest"),
-            "n": validation.get("n_scored"),
+            "judge_model": safety.get("judge_model"),
+            "dataset": safety.get("dataset", "xstest"),
+            "n": safety.get("n_scored"),
             "accuracy": m.get("accuracy"),
             "cohen_kappa": m.get("cohen_kappa"),
             "safe_overflag_rate": m.get("safe_overflag_rate"),
             "unsafe_recall": m.get("unsafe_recall"),
-            "weakest_types": [{"type": t, "accuracy": v["accuracy"], "n": v["n"]} for t, v in weakest],
+            "weakest_types": _weakest(safety),
+        }
+    judge_factuality: dict[str, Any] = {}
+    if factuality:
+        m = factuality.get("metrics", {})
+        judge_factuality = {
+            "judge_model": factuality.get("judge_model"),
+            "dataset": factuality.get("dataset", "truthfulqa"),
+            "n": factuality.get("n_scored"),
+            "accuracy": m.get("accuracy"),
+            "cohen_kappa": m.get("cohen_kappa"),
+            "false_answer_detection_rate": m.get("false_answer_detection_rate"),
+            "weakest_types": _weakest(factuality),
         }
 
     # Agency gradient (primary test).
@@ -147,6 +183,7 @@ def build_summary(root: Path, run_dir: Path | None, validation_dir: Path | None)
         "provenance": provenance,
         "data_layer": _data_layer(root),
         "judge_validation": judge,
+        "judge_factuality": judge_factuality,
         "agency_gradient": {
             "model_formula": grad.get("model"),
             "n": grad.get("n"),

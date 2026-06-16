@@ -132,13 +132,21 @@ def generate_records(
     cycle: int,
     state: CalibrationState,
     client: OllamaClient,
+    existing_ids: set[str] | None = None,
 ) -> list[GenerationRecord]:
     options = generation_options(config)
+    existing_ids = existing_ids or set()
     records: list[GenerationRecord] = []
     total = len(selected)
+    skipped = 0
     for index, (prompt, role_id, model, agency_mode) in enumerate(selected, start=1):
         role = roles_file.by_id[role_id]
         packet = packets[prompt.source_packet_id]
+        item_seed = f"{run_id}:{cycle}:{prompt.id}:{role_id}:{model}:{agency_mode}"
+        item_id = hashlib.sha256(item_seed.encode("utf-8")).hexdigest()[:16]
+        if item_id in existing_ids:
+            skipped += 1
+            continue
         generation_prompt = build_generation_prompt(
             prompt,
             role,
@@ -146,8 +154,6 @@ def generate_records(
             addendum=state.active_generation_addendum,
             agency_mode=agency_mode,
         )
-        item_seed = f"{run_id}:{cycle}:{prompt.id}:{role_id}:{model}:{agency_mode}"
-        item_id = hashlib.sha256(item_seed.encode("utf-8")).hexdigest()[:16]
         output = ""
         error = None
         console.print(f"[dim]Generate {index}/{total}: model={model} role={role_id} mode={agency_mode} prompt={prompt.id}[/dim]")
@@ -173,6 +179,8 @@ def generate_records(
                 error=error,
             )
         )
+    if skipped:
+        console.print(f"[dim]Resumed: skipped {skipped} already-generated items[/dim]")
     return records
 
 
@@ -359,7 +367,8 @@ def command_iterate(args: argparse.Namespace) -> int:
             selection_strategy=config.selection_strategy,
         )
         console.print(f"[bold]Cycle {cycle}[/bold]: generating {len(selected)} items")
-        records = generate_records(config, prompts, roles_file, packets, selected, run_id, cycle, state, client)
+        existing_ids = {record.item_id for record in read_jsonl(path / "generations.jsonl", GenerationRecord)}
+        records = generate_records(config, prompts, roles_file, packets, selected, run_id, cycle, state, client, existing_ids)
         append_jsonl(path / "generations.jsonl", records)
         new_scores = score_records(config, prompts, roles_file, packets, records, path, client)
         append_jsonl(path / "scores.jsonl", new_scores)
@@ -614,27 +623,36 @@ def command_publish_artifacts(args: argparse.Namespace) -> int:
 
 
 def command_validate_judge(args: argparse.Namespace) -> int:
-    from .validation import load_xstest, stratified_sample, validate_judge_on_xstest, validation_markdown
+    from . import validation as V
 
     client = OllamaClient(args.ollama_url)
     client.ensure_models([args.judge])
-    items = load_xstest(args.dataset)
-    items = stratified_sample(items, args.per_type)
-    console.print(f"[bold]Validating judge {args.judge}[/bold] on {len(items)} XSTest items")
 
     def progress(index: int, total: int, item: dict[str, Any]) -> None:
-        console.print(f"[dim]Judge {index}/{total}: label={item['label']} type={item['type']}[/dim]")
+        tag = item.get("label", "")
+        console.print(f"[dim]Judge {index}/{total}: {args.task} label={tag} type={item.get('type','')}[/dim]")
 
-    report = validate_judge_on_xstest(items, args.judge, client, progress=progress)
-    out_dir = Path(args.runs_dir) / f"judge_validation_{now_iso().replace(':', '').replace('-', '')}"
+    if args.task == "factuality":
+        dataset = args.dataset or "data/validation/truthfulqa.csv"
+        items = V.load_truthfulqa(dataset, max_per_category=args.per_type)
+        console.print(f"[bold]Validating judge {args.judge}[/bold] (factuality) on {len(items)} TruthfulQA items")
+        report = V.validate_factuality_on_truthfulqa(items, args.judge, client, progress=progress)
+        markdown = V.factuality_markdown(report)
+        key = f"false_answer_detection_rate={report['metrics']['false_answer_detection_rate']}"
+    else:
+        dataset = args.dataset or "data/validation/xstest_prompts.csv"
+        items = V.stratified_sample(V.load_xstest(dataset), args.per_type)
+        console.print(f"[bold]Validating judge {args.judge}[/bold] (safety) on {len(items)} XSTest items")
+        report = V.validate_judge_on_xstest(items, args.judge, client, progress=progress)
+        markdown = V.validation_markdown(report)
+        key = f"safe_overflag_rate={report['metrics']['safe_overflag_rate']}"
+
+    out_dir = Path(args.runs_dir) / f"judge_validation_{args.task}_{now_iso().replace(':', '').replace('-', '')}"
     out_dir.mkdir(parents=True, exist_ok=True)
     write_json(out_dir / "validation.json", report)
-    (out_dir / "validation.md").write_text(validation_markdown(report), encoding="utf-8")
+    (out_dir / "validation.md").write_text(markdown, encoding="utf-8")
     metrics = report["metrics"]
-    console.print(
-        f"accuracy={metrics['accuracy']} kappa={metrics['cohen_kappa']} "
-        f"safe_overflag_rate={metrics['safe_overflag_rate']}"
-    )
+    console.print(f"accuracy={metrics['accuracy']} kappa={metrics['cohen_kappa']} {key}")
     console.print(f"Artifacts: {out_dir}")
     return 0
 
@@ -732,8 +750,10 @@ def build_parser() -> argparse.ArgumentParser:
     validate_judge = sub.add_parser("validate-judge")
     validate_judge.add_argument("--config", default=argparse.SUPPRESS)
     validate_judge.add_argument("--judge", default="qwen3:8b")
-    validate_judge.add_argument("--dataset", default="data/validation/xstest_prompts.csv")
-    validate_judge.add_argument("--per-type", type=int, help="stratified sample: N items per XSTest type")
+    validate_judge.add_argument("--task", choices=["safety", "factuality"], default="safety",
+                                help="safety=XSTest (M dimension), factuality=TruthfulQA (E dimension)")
+    validate_judge.add_argument("--dataset", help="dataset path; defaults per task")
+    validate_judge.add_argument("--per-type", type=int, help="stratified sample: N items per category/type")
     validate_judge.add_argument("--ollama-url", default="http://localhost:11434")
     validate_judge.add_argument("--runs-dir", default="runs")
     validate_judge.set_defaults(func=command_validate_judge)

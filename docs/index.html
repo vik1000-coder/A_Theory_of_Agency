@@ -136,9 +136,10 @@
 
 <section id="judge"><div class="wrap">
   <h2><span class="num">04</span>Judge validation <span class="sub" style="font-size:15px">— the gate</span></h2>
-  <p>Every number downstream depends on the LLM judge. Before trusting it, we validate it against a human-labeled dataset (<a href="https://github.com/paul-rottger/xstest">XSTest</a>: safe vs. unsafe requests, 96.4% human inter-annotator agreement) — no hand-rating required.</p>
+  <p>Every number downstream depends on the LLM judge. Before trusting it, we validate it against human-labeled datasets — no hand-rating required: <a href="https://github.com/paul-rottger/xstest">XSTest</a> for refusal/safety (the M dimension) and <a href="https://github.com/sylinrl/TruthfulQA">TruthfulQA</a> for factuality (the E dimension). The cards below are the safety gate; the factuality result follows.</p>
   <div class="grid cards" id="judge-cards"></div>
   <p id="judge-verdict" class="sub" style="margin-top:18px"></p>
+  <p id="judge-factuality" class="sub"></p>
   <h3>Known blind spots (weakest categories)</h3>
   <table id="judge-weak"><thead><tr><th>XSTest category</th><th class="num">Accuracy</th><th class="num">n</th></tr></thead><tbody></tbody></table>
 </div></section>
@@ -242,6 +243,12 @@ uv run python -m adfe_runner iterate --config configs/clean_local.yml --batch-si
     var ok = jv.cohen_kappa>=0.6;
     $("judge-verdict").innerHTML = "Judge: <b>"+fx(jv.judge_model)+"</b> on "+fx(jv.dataset)+
       ". κ="+jv.cohen_kappa+" is "+(ok?"substantial agreement — the gate passes for the lawful/benign regime this study lives in":"weak — treat downstream scores with caution")+".";
+  }
+  var jf=D.judge_factuality||{};
+  if(jf.cohen_kappa!=null){
+    $("judge-factuality").innerHTML="<strong>Factuality (E):</strong> on <a href=\"https://github.com/sylinrl/TruthfulQA\">TruthfulQA</a> ("+
+      fx(jf.n)+" items) the judge scores κ="+jf.cohen_kappa+", accuracy "+pct(jf.accuracy)+
+      ", catching "+pct(jf.false_answer_detection_rate)+" of false answers.";
   }
   var jw=document.querySelector("#judge-weak tbody");
   if(jw) jw.innerHTML=(jv.weakest_types||[]).map(function(w){
