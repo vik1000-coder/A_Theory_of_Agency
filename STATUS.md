@@ -15,9 +15,17 @@ after an audit found the original pipeline could manufacture its own effect.
 |---|---|
 | Methodology fixes (held-out judge, frozen runs, blinded inference, non-circular mixed-effects outcome, pair audit) | ✅ done (28 tests) |
 | Judge validation — safety / M (XSTest, n=450) | ✅ κ=0.78, acc 89%, safe-overflag 2.4% |
-| Judge validation — factuality / E (TruthfulQA, n=1580) | ⏳ running (preliminary sample κ≈0.3 → E scores need caution) |
-| Clean study (`clean_local.yml`, full factorial, frozen, held-out judge) | ⏳ queued (starts when validation finishes) |
-| Public site | ✅ live, **preliminary** (shows pre-fix contaminated findings + the clean safety gate) |
+| Judge validation — factuality / E (TruthfulQA, n=1580) | ✅ κ=0.50, catches 80% of false answers (E scores: moderate trust) |
+| Clean study (`clean_local.yml`, n=2100, frozen, held-out judge) | ✅ **complete & citable** (`contaminated=false`) |
+| Public site | ✅ live with **citable** results |
+
+## Result (clean run `adfe_clean_local_main`, n=2100)
+
+The **agency gradient is not supported** on small local models: curation accountability is flat
+with agency (C: p≈0.50), only deliberative standing is marginal (p≈0.04, fails multiple-comparison
+correction), 22/42 role-interval predictions violated. The one robust signal is viewpoint-asymmetric
+**refusal** in specific models (llama3.2:3b answers one side of a lawful pair, refuses the mirror) —
+a safety-tuning artifact, not an agency effect. A clean falsification on this population.
 
 ## What is running now
 
