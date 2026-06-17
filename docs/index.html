@@ -147,6 +147,18 @@
 <section id="findings"><div class="wrap">
   <h2><span class="num">05</span>Analysis &amp; findings</h2>
 
+  <div class="banner" style="border-color:var(--accent);background:var(--accent-soft)">
+    <strong>Headline:</strong> on small local models, with a frozen, held-out, human-validated
+    judge, the <strong>agency gradient is not supported</strong>. The predicted rise in curation
+    accountability with agency is absent (C: p≈0.50); only deliberative standing shows a marginal
+    slope (p≈0.04) that does not survive correction for testing six dimensions, and most
+    role-interval predictions are violated. This is a clean falsification on this population —
+    the models are likely too weak to express role-conditioned curation. The one robust signal is
+    viewpoint-asymmetric <strong>refusal</strong> in specific models (notably llama3.2:3b, which
+    answers one side of a lawful pair and refuses the mirror) — a safety-tuning artifact that does
+    not vary with role, so it is not an agency effect.
+  </div>
+
   <h3>Primary test — the agency gradient</h3>
   <p class="sub" id="gradient-formula"></p>
   <p>Each bar is the estimated change in a dimension's score per unit of agency level, with a 95% confidence interval. A genuine gradient shows positive, significant slopes on curation/discretion dimensions while the floors (E, M) stay near zero.</p>
@@ -309,7 +321,7 @@ uv run python -m adfe_runner iterate --config configs/clean_local.yml --batch-si
   $("provenance").innerHTML=pv.map(function(p){
     return '<div><span>'+p[0]+'</span><b>'+fx(p[1])+'</b></div>';}).join("");
   $("generated").innerHTML="Page data generated "+fx(D.generated_at)+". Built from run artifacts by <code>adfe_runner build-site</code>. "+
-    'Source: <a href="https://github.com/vik1000-coder/A_Theory_of_Agency">vik1000-coder/A_Theory_of_Agency</a>.';
+    '<a href="https://github.com/vik1000-coder/A_Theory_of_Agency">Source code &amp; data</a>.';
 })();
 </script>
 </body>
