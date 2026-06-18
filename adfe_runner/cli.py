@@ -134,6 +134,7 @@ def generate_records(
     state: CalibrationState,
     client: OllamaClient,
     existing_ids: set[str] | None = None,
+    out_path: Path | None = None,
 ) -> list[GenerationRecord]:
     options = generation_options(config)
     existing_ids = existing_ids or set()
@@ -163,23 +164,24 @@ def generate_records(
         except OllamaError as exc:
             error = str(exc)
             console.print(f"[yellow]Generation error {index}/{total}: {error}[/yellow]")
-        records.append(
-            GenerationRecord(
-                run_id=run_id,
-                cycle=cycle,
-                item_id=item_id,
-                model=model,
-                role=role_id,
-                agency_mode=agency_mode,
-                prompt_id=prompt.id,
-                source_packet_id=prompt.source_packet_id,
-                generation_prompt=generation_prompt,
-                output=output,
-                created_at=now_iso(),
-                calibration_id="active" if state.active_generation_addendum or state.active_judge_addendum else None,
-                error=error,
-            )
+        record = GenerationRecord(
+            run_id=run_id,
+            cycle=cycle,
+            item_id=item_id,
+            model=model,
+            role=role_id,
+            agency_mode=agency_mode,
+            prompt_id=prompt.id,
+            source_packet_id=prompt.source_packet_id,
+            generation_prompt=generation_prompt,
+            output=output,
+            created_at=now_iso(),
+            calibration_id="active" if state.active_generation_addendum or state.active_judge_addendum else None,
+            error=error,
         )
+        records.append(record)
+        if out_path is not None:  # persist immediately so a mid-run kill loses nothing
+            append_jsonl(out_path, [record])
     if skipped:
         console.print(f"[dim]Resumed: skipped {skipped} already-generated items[/dim]")
     return records
@@ -202,8 +204,11 @@ def command_generate(args: argparse.Namespace) -> int:
         agency_modes=config.agency_modes,
         selection_strategy=config.selection_strategy,
     )
-    records = generate_records(config, prompts, roles_file, packets, selected, run_id, args.cycle, state, client)
-    append_jsonl(path / "generations.jsonl", records)
+    existing_ids = {record.item_id for record in read_jsonl(path / "generations.jsonl", GenerationRecord)}
+    records = generate_records(
+        config, prompts, roles_file, packets, selected, run_id, args.cycle, state, client,
+        existing_ids, out_path=path / "generations.jsonl",
+    )
     console.print(f"Wrote {len(records)} generations to {path / 'generations.jsonl'}")
     console.print(f"run_id={run_id}")
     return 0
@@ -218,6 +223,7 @@ def score_records(
     run_path: Path,
     client: OllamaClient,
     force: bool = False,
+    out_path: Path | None = None,
 ) -> list[ScoreRecord]:
     prompt_map = {prompt.id: prompt for prompt in prompts}
     role_ids = [role.id for role in roles_file.roles]
@@ -234,21 +240,22 @@ def score_records(
             f"[dim]Score {index}/{total}: model={record.model} role={record.role} "
             f"mode={record.agency_mode} prompt={record.prompt_id}[/dim]"
         )
-        new_scores.append(
-            score_generation(
-                record,
-                prompt=prompt,
-                assigned_role=role,
-                role_ids=role_ids,
-                packet=packet,
-                client=client,
-                judge_model=config.judge_model,
-                options=judge_options(),
-                judge_addendum=state.active_judge_addendum,
-                allow_heuristic_fallback=config.allow_heuristic_fallback,
-                blind_inference=config.blind_role_inference,
-            )
+        score = score_generation(
+            record,
+            prompt=prompt,
+            assigned_role=role,
+            role_ids=role_ids,
+            packet=packet,
+            client=client,
+            judge_model=config.judge_model,
+            options=judge_options(),
+            judge_addendum=state.active_judge_addendum,
+            allow_heuristic_fallback=config.allow_heuristic_fallback,
+            blind_inference=config.blind_role_inference,
         )
+        new_scores.append(score)
+        if out_path is not None and not force:  # persist immediately; resume skips scored items
+            append_jsonl(out_path, [score])
     return new_scores
 
 
@@ -258,12 +265,14 @@ def command_score(args: argparse.Namespace) -> int:
     client.ensure_models([config.judge_model])
     path = run_dir(config, args.run_id)
     records = read_jsonl(path / "generations.jsonl", GenerationRecord)
-    new_scores = score_records(config, prompts, roles_file, packets, records, path, client, force=args.force)
+    new_scores = score_records(
+        config, prompts, roles_file, packets, records, path, client,
+        force=args.force, out_path=path / "scores.jsonl",
+    )
     if args.force:
         write_jsonl(path / "scores.jsonl", new_scores)
         console.print(f"Rescored {len(new_scores)} records into {path / 'scores.jsonl'}")
     else:
-        append_jsonl(path / "scores.jsonl", new_scores)
         console.print(f"Wrote {len(new_scores)} new scores to {path / 'scores.jsonl'}")
     return 0
 
@@ -369,10 +378,13 @@ def command_iterate(args: argparse.Namespace) -> int:
         )
         console.print(f"[bold]Cycle {cycle}[/bold]: generating {len(selected)} items")
         existing_ids = {record.item_id for record in read_jsonl(path / "generations.jsonl", GenerationRecord)}
-        records = generate_records(config, prompts, roles_file, packets, selected, run_id, cycle, state, client, existing_ids)
-        append_jsonl(path / "generations.jsonl", records)
-        new_scores = score_records(config, prompts, roles_file, packets, records, path, client)
-        append_jsonl(path / "scores.jsonl", new_scores)
+        generate_records(
+            config, prompts, roles_file, packets, selected, run_id, cycle, state, client,
+            existing_ids, out_path=path / "generations.jsonl",
+        )
+        # Score every generated-but-unscored item (covers resume after a scoring-phase kill).
+        all_records = read_jsonl(path / "generations.jsonl", GenerationRecord)
+        score_records(config, prompts, roles_file, packets, all_records, path, client, out_path=path / "scores.jsonl")
         scores = read_jsonl(path / "scores.jsonl", ScoreRecord)
         analysis = analyze_scores(scores, prompts, roles_file.by_id)
         write_json(path / "analysis.json", analysis)

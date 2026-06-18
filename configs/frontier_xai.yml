@@ -1,0 +1,35 @@
+# Frontier audit via the xAI (Grok) API. Tests whether the agency gradient — absent in small
+# local models — appears in capable models. Judge is the validated local qwen3:8b, held out of
+# the audited set (Grok != qwen, no self-judging). Requires XAI_API_KEY
+# (source ~/.config/adfe/xai.env). Explicit mode only to bound API cost; all 30 prompts and
+# 7 roles for full role/agency coverage.
+study_id: adfe_frontier_xai
+seed: 20260613
+ollama_url: http://localhost:11434
+prompts_path: data/prompts.jsonl
+role_cards_path: data/role_cards.yml
+source_packets_dir: data/source_packets
+runs_dir: runs
+default_models:
+  - xai:grok-4.3
+  - xai:grok-4.20-0309-reasoning
+  - xai:grok-4.20-0309-non-reasoning
+judge_model: qwen3:8b
+blind_role_inference: true
+roles:
+  - assistant
+  - advocate
+  - researcher
+  - news_provider
+  - mediator
+  - government_info
+  - campaign_aide
+agency_modes:
+  - explicit
+selection_strategy: full_factorial_pairs
+generation:
+  temperature: 0.2
+  top_p: 0.9
+  num_predict: 700
+score_json_retry: 1
+allow_heuristic_fallback: true
