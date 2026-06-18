@@ -38,6 +38,24 @@ launchctl bootout gui/$(id -u)/com.adfe.pipeline
 rm ~/Library/LaunchAgents/com.adfe.pipeline.plist
 ```
 
+## Frontier (Grok) + V-gate agent
+
+`run_frontier.sh` + `com.adfe.frontier.plist` run the V judge gate (BABE) then the frontier
+Grok study, resumably. It sources the xAI key from `~/.config/adfe/xai.env` (never committed).
+
+```bash
+cp scripts/com.adfe.frontier.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.adfe.frontier.plist
+# monitor
+tail -f runs/launchd.frontier.out.log
+launchctl print gui/$(id -u)/com.adfe.frontier | grep -iE 'state|pid'
+# stop / uninstall
+launchctl bootout gui/$(id -u)/com.adfe.frontier
+rm ~/Library/LaunchAgents/com.adfe.frontier.plist
+```
+
+It writes `runs/FRONTIER_DONE` when both the V gate and the frontier study complete.
+
 ## When it finishes
 
 It writes `runs/PIPELINE_DONE` and regenerates `docs/data/summary.js`. Publish the updated

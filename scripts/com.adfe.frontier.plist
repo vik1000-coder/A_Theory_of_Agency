@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.adfe.frontier</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-is</string>
+    <string>/Users/vik/Developer/A_Theory_of_Agency/scripts/run_frontier.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/vik/Developer/A_Theory_of_Agency</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+  <key>Nice</key>
+  <integer>10</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/Users/vik/Developer/A_Theory_of_Agency/runs/launchd.frontier.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/vik/Developer/A_Theory_of_Agency/runs/launchd.frontier.err.log</string>
+</dict>
+</plist>
