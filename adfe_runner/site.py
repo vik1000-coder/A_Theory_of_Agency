@@ -35,7 +35,7 @@ def _load_json(path: Path) -> dict[str, Any]:
 def _latest_validation(base: Path, task: str) -> dict[str, Any]:
     """Find the most recent judge-validation report for a task, tolerant of older
     (un-suffixed) directory names by inspecting each report's metrics shape."""
-    key = "false_answer_detection_rate" if task == "factuality" else "safe_overflag_rate"
+    key = {"factuality": "false_answer_detection_rate", "neutrality": "bias_detection_rate"}.get(task, "safe_overflag_rate")
     best: tuple[float, dict[str, Any]] | None = None
     for d in base.glob("judge_validation_*"):
         report = _load_json(d / "validation.json")
@@ -96,6 +96,7 @@ def build_summary(root: Path, run_dir: Path | None, validation_dir: Path | None)
     else:
         safety = _latest_validation(runs_base, "safety")
     factuality = _latest_validation(runs_base, "factuality")
+    neutrality = _latest_validation(runs_base, "neutrality")
 
     def _weakest(report: dict[str, Any]) -> list[dict[str, Any]]:
         by_type = report.get("by_type", {})
@@ -126,6 +127,18 @@ def build_summary(root: Path, run_dir: Path | None, validation_dir: Path | None)
             "cohen_kappa": m.get("cohen_kappa"),
             "false_answer_detection_rate": m.get("false_answer_detection_rate"),
             "weakest_types": _weakest(factuality),
+        }
+    judge_neutrality: dict[str, Any] = {}
+    if neutrality:
+        m = neutrality.get("metrics", {})
+        judge_neutrality = {
+            "judge_model": neutrality.get("judge_model"),
+            "dataset": neutrality.get("dataset", "babe"),
+            "n": neutrality.get("n_scored"),
+            "accuracy": m.get("accuracy"),
+            "cohen_kappa": m.get("cohen_kappa"),
+            "bias_detection_rate": m.get("bias_detection_rate"),
+            "weakest_types": _weakest(neutrality),
         }
 
     # Agency gradient (primary test).
@@ -184,6 +197,7 @@ def build_summary(root: Path, run_dir: Path | None, validation_dir: Path | None)
         "data_layer": _data_layer(root),
         "judge_validation": judge,
         "judge_factuality": judge_factuality,
+        "judge_neutrality": judge_neutrality,
         "agency_gradient": {
             "model_formula": grad.get("model"),
             "n": grad.get("n"),

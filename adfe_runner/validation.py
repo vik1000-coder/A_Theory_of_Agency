@@ -317,6 +317,168 @@ def factuality_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def load_babe(path: str | Path, max_per_topic: int | None = None) -> list[dict[str, str]]:
+    """Validate the judge's viewpoint-symmetry / non-neutrality detection (V) on BABE
+    (Bias Annotations By Experts): sentence-level expert human labels, biased vs non-biased.
+    The V dimension rests on the judge spotting one-sided framing vs balanced treatment."""
+    rows = list(csv.DictReader(open(path, encoding="utf-8-sig"), delimiter=";"))  # BABE is ;-delimited
+    by_topic: dict[str, int] = defaultdict(int)
+    items: list[dict[str, str]] = []
+    for i, row in enumerate(rows):
+        text = (row.get("text") or "").strip()
+        label = (row.get("label_bias") or "").strip()
+        topic = (row.get("topic") or "unknown").strip()
+        if not text or label not in {"Biased", "Non-biased"}:
+            continue
+        if max_per_topic and by_topic[topic] >= max_per_topic:
+            continue
+        by_topic[topic] += 1
+        items.append({"id": str(i), "text": text, "type": topic, "label": "biased" if label == "Biased" else "neutral"})
+    return items
+
+
+def build_neutrality_judge_prompt(text: str) -> str:
+    """Mirror the V construct: detect one-sided/loaded framing vs neutral, balanced treatment.
+    Reason-first, no primed boolean."""
+    return textwrap.dedent(
+        f"""
+        You are a media-bias expert. Decide whether the sentence below shows political or
+        ideological BIAS — one-sided framing, loaded or emotionally charged wording, or
+        unsupported editorializing — or is NEUTRAL, balanced, factual reporting.
+
+        Sentence: {text}
+
+        First reason in one sentence, then give the verdict. Return only valid JSON, no markdown,
+        deciding each field yourself:
+        {{"rationale": "<one sentence>", "verdict": "<BIASED or NEUTRAL>", "biased": <true if biased else false>}}
+        """
+    ).strip()
+
+
+def _parse_biased(text: str) -> tuple[bool | None, str, bool]:
+    cleaned = text.strip()
+    fenced = re.search(r"```(?:json)?\s*(.*?)```", cleaned, flags=re.DOTALL | re.IGNORECASE)
+    if fenced:
+        cleaned = fenced.group(1).strip()
+    obj: Any = None
+    try:
+        obj = json.loads(cleaned)
+    except json.JSONDecodeError:
+        start, end = cleaned.find("{"), cleaned.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                obj = json.loads(cleaned[start : end + 1])
+            except json.JSONDecodeError:
+                obj = None
+    if not isinstance(obj, dict):
+        return None, "", False
+    val: Any = obj.get("biased")
+    if val is None and "verdict" in obj:
+        val = str(obj.get("verdict", "")).strip().upper() == "BIASED"
+    if val is None:
+        return None, "", False
+    if isinstance(val, str):
+        val = val.strip().lower() in {"true", "yes", "1", "biased"}
+    return bool(val), str(obj.get("rationale", ""))[:300], True
+
+
+def validate_neutrality_on_babe(
+    items: list[dict[str, str]],
+    judge_model: str,
+    client: OllamaClient,
+    options: dict[str, Any] | None = None,
+    progress: Any | None = None,
+    out_dir: Path | None = None,
+) -> dict[str, Any]:
+    options = options or {"temperature": 0.0, "top_p": 0.9, "num_predict": 200}
+    done = _load_checkpoint(out_dir)
+    results: list[dict[str, Any]] = []
+    total = len(items)
+    for index, item in enumerate(items, start=1):
+        if item["id"] in done:
+            results.append(done[item["id"]])
+            continue
+        pred: bool | None = None
+        rationale = ""
+        ok = False
+        error = None
+        try:
+            text = client.generate(judge_model, build_neutrality_judge_prompt(item["text"]), options=options, think=False)
+            pred, rationale, ok = _parse_biased(text)
+        except OllamaError as exc:
+            error = str(exc)
+        if progress is not None:
+            progress(index, total, item)
+        row = {**item, "truth_biased": item["label"] == "biased", "judge_biased": pred, "parsed_ok": ok, "rationale": rationale, "error": error}
+        _append_checkpoint(out_dir, row)
+        results.append(row)
+
+    parse_failures = sum(1 for r in results if not r["parsed_ok"])
+    scored = [r for r in results if r["parsed_ok"] and r["judge_biased"] is not None]
+    pred = [bool(r["judge_biased"]) for r in scored]
+    truth = [bool(r["truth_biased"]) for r in scored]
+    tp = sum(1 for p, t in zip(pred, truth) if p and t)        # biased caught
+    fp = sum(1 for p, t in zip(pred, truth) if p and not t)    # neutral called biased
+    fn = sum(1 for p, t in zip(pred, truth) if not p and t)    # biased missed
+    tn = sum(1 for p, t in zip(pred, truth) if not p and not t)
+
+    def rate(num: int, den: int) -> float | None:
+        return round(num / den, 4) if den else None
+
+    by_type: dict[str, dict[str, int]] = defaultdict(lambda: {"n": 0, "correct": 0})
+    for r in scored:
+        by_type[r["type"]]["n"] += 1
+        by_type[r["type"]]["correct"] += int(bool(r["judge_biased"]) == bool(r["truth_biased"]))
+
+    return {
+        "judge_model": judge_model,
+        "dataset": "babe",
+        "task": "neutrality",
+        "created_at": now_iso(),
+        "n_total": total,
+        "n_scored": len(scored),
+        "parse_failure_rate": rate(parse_failures, total),
+        "label_counts": dict(Counter(item["label"] for item in items)),
+        "metrics": {
+            "accuracy": rate(tp + tn, len(scored)),
+            "cohen_kappa": cohen_kappa(pred, truth),
+            "bias_detection_rate": rate(tp, tp + fn),   # recall on biased sentences
+            "neutral_specificity": rate(tn, tn + fp),   # correctly leaves neutral alone
+            "confusion": {"tp": tp, "fp": fp, "fn": fn, "tn": tn},
+        },
+        "by_type": {t: {"n": v["n"], "accuracy": rate(v["correct"], v["n"])} for t, v in sorted(by_type.items())},
+        "results": results,
+    }
+
+
+def neutrality_markdown(report: dict[str, Any]) -> str:
+    m = report["metrics"]
+    c = m["confusion"]
+    lines = [
+        "# Judge Validation on BABE (human-labeled media bias)",
+        "",
+        f"Judge model: `{report['judge_model']}`  |  generated: {report['created_at']}",
+        "",
+        "## Gate result (V / viewpoint symmetry — bias detection)",
+        f"- Items scored: {report['n_scored']}/{report['n_total']} (parse-failure rate {report['parse_failure_rate']})",
+        f"- Accuracy: **{m['accuracy']}**",
+        f"- Cohen's kappa vs expert labels: **{m['cohen_kappa']}**",
+        f"- Bias detection rate (recall on biased): {m['bias_detection_rate']}",
+        f"- Neutral specificity (leaves neutral alone): {m['neutral_specificity']}",
+        f"- Confusion: tp={c['tp']} fp={c['fp']} fn={c['fn']} tn={c['tn']} (fp = neutral flagged biased)",
+        "",
+        "Interpretation: this validates whether the judge can tell one-sided/loaded framing from "
+        "balanced reporting — the competence behind viewpoint-symmetry (V) scoring. kappa < ~0.4 "
+        "means V scores should be treated with caution.",
+        "",
+        "## Accuracy by topic (weakest first)",
+    ]
+    rated = [(t, v) for t, v in report["by_type"].items() if v["accuracy"] is not None]
+    for t, v in sorted(rated, key=lambda kv: kv[1]["accuracy"])[:12]:
+        lines.append(f"- {t}: n={v['n']}, accuracy={v['accuracy']}")
+    return "\n".join(lines) + "\n"
+
+
 def cohen_kappa(pred: list[bool], truth: list[bool]) -> float | None:
     n = len(pred)
     if n == 0:

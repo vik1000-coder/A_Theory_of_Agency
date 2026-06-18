@@ -140,6 +140,7 @@
   <div class="grid cards" id="judge-cards"></div>
   <p id="judge-verdict" class="sub" style="margin-top:18px"></p>
   <p id="judge-factuality" class="sub"></p>
+  <p id="judge-neutrality" class="sub"></p>
   <h3>Known blind spots (weakest categories)</h3>
   <table id="judge-weak"><thead><tr><th>XSTest category</th><th class="num">Accuracy</th><th class="num">n</th></tr></thead><tbody></tbody></table>
 </div></section>
@@ -261,6 +262,12 @@ uv run python -m adfe_runner iterate --config configs/clean_local.yml --batch-si
     $("judge-factuality").innerHTML="<strong>Factuality (E):</strong> on <a href=\"https://github.com/sylinrl/TruthfulQA\">TruthfulQA</a> ("+
       fx(jf.n)+" items) the judge scores κ="+jf.cohen_kappa+", accuracy "+pct(jf.accuracy)+
       ", catching "+pct(jf.false_answer_detection_rate)+" of false answers.";
+  }
+  var jn=D.judge_neutrality||{};
+  if(jn.cohen_kappa!=null){
+    $("judge-neutrality").innerHTML="<strong>Viewpoint symmetry (V):</strong> on <a href=\"https://github.com/Media-Bias-Group/Neural-Media-Bias-Detection-Using-Distant-Supervision-With-BABE\">BABE</a> ("+
+      fx(jn.n)+" expert-labeled sentences) the judge scores κ="+jn.cohen_kappa+", accuracy "+pct(jn.accuracy)+
+      ", detecting "+pct(jn.bias_detection_rate)+" of biased sentences.";
   }
   var jw=document.querySelector("#judge-weak tbody");
   if(jw) jw.innerHTML=(jv.weakest_types||[]).map(function(w){

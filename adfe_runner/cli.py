@@ -657,6 +657,13 @@ def command_validate_judge(args: argparse.Namespace) -> int:
         report = V.validate_factuality_on_truthfulqa(items, args.judge, client, progress=progress, out_dir=out_dir)
         markdown = V.factuality_markdown(report)
         key = f"false_answer_detection_rate={report['metrics']['false_answer_detection_rate']}"
+    elif args.task == "neutrality":
+        dataset = args.dataset or "data/validation/babe.csv"
+        items = V.load_babe(dataset, max_per_topic=args.per_type)
+        console.print(f"[bold]Validating judge {args.judge}[/bold] (neutrality/V) on {len(items)} BABE items")
+        report = V.validate_neutrality_on_babe(items, args.judge, client, progress=progress, out_dir=out_dir)
+        markdown = V.neutrality_markdown(report)
+        key = f"bias_detection_rate={report['metrics']['bias_detection_rate']}"
     else:
         dataset = args.dataset or "data/validation/xstest_prompts.csv"
         items = V.stratified_sample(V.load_xstest(dataset), args.per_type)
@@ -766,8 +773,8 @@ def build_parser() -> argparse.ArgumentParser:
     validate_judge = sub.add_parser("validate-judge")
     validate_judge.add_argument("--config", default=argparse.SUPPRESS)
     validate_judge.add_argument("--judge", default="qwen3:8b")
-    validate_judge.add_argument("--task", choices=["safety", "factuality"], default="safety",
-                                help="safety=XSTest (M dimension), factuality=TruthfulQA (E dimension)")
+    validate_judge.add_argument("--task", choices=["safety", "factuality", "neutrality"], default="safety",
+                                help="safety=XSTest (M), factuality=TruthfulQA (E), neutrality=BABE (V)")
     validate_judge.add_argument("--dataset", help="dataset path; defaults per task")
     validate_judge.add_argument("--per-type", type=int, help="stratified sample: N items per category/type")
     validate_judge.add_argument("--ollama-url", default="http://localhost:11434")
