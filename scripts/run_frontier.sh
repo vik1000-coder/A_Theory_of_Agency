@@ -6,7 +6,7 @@
 # Reads the xAI key from ~/.config/adfe/xai.env (never committed). Runs the V validation first
 # (local judge, ~30 min) then the frontier study, so they don't contend for Ollama.
 
-set -u
+set -euo pipefail
 REPO="$HOME/Developer/A_Theory_of_Agency"
 cd "$REPO" || exit 1
 export PATH="/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
@@ -18,18 +18,25 @@ F_JSON="runs/adfe_frontier_grok/analysis.json"
 log() { echo "[$(date '+%Y-%m-%dT%H:%M:%S')] $*"; }
 
 if [ -f runs/FRONTIER_DONE ]; then
-  log "FRONTIER_DONE present; exiting 0"
+  log "FRONTIER_DONE present; verifying completed artifacts"
+  "$UV" run python -m adfe_runner audit-run --config configs/frontier_xai.yml \
+    --run-id adfe_frontier_grok --expect-full
+  [ -f "$V_JSON" ] && [ -f "$F_JSON" ]
+  log "FRONTIER_DONE verified; exiting 0"
   exit 0
 fi
 
 log "start (V: $(wc -l < runs/judge_validation_neutrality_qwen3_8b/results.jsonl 2>/dev/null || echo 0)/909, frontier gens: $(wc -l < runs/adfe_frontier_grok/generations.jsonl 2>/dev/null || echo 0)/630)"
 
 # 1) V (viewpoint-symmetry) judge gate — local judge, resumes from checkpoint.
-"$UV" run python -m adfe_runner validate-judge --task neutrality --per-type 40 || log "validate-judge exited $?"
+"$UV" run python -m adfe_runner validate-judge --task neutrality --per-type 40
 
 # 2) Frontier study — Grok via API + local judge scoring, resumes by run-id.
 "$UV" run python -m adfe_runner iterate --config configs/frontier_xai.yml \
-  --cycles 1 --batch-size all --run-id adfe_frontier_grok || log "iterate exited $?"
+  --cycles 1 --batch-size all --run-id adfe_frontier_grok
+
+"$UV" run python -m adfe_runner audit-run --config configs/frontier_xai.yml \
+  --run-id adfe_frontier_grok --expect-full
 
 if [ -f "$V_JSON" ] && [ -f "$F_JSON" ]; then
   log "FRONTIER + V COMPLETE"

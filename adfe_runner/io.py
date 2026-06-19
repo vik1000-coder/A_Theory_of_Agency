@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import random
 import shutil
@@ -154,6 +155,22 @@ def read_json(path: Path, default: dict | None = None) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def stable_hash(data: dict) -> str:
+    payload = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def config_hash(config: StudyConfig) -> str:
+    return stable_hash(config.model_dump(mode="json"))
+
+
+def design_hash(config: StudyConfig, models: list[str]) -> str:
+    data = config.model_dump(mode="json")
+    data.pop("runs_dir", None)
+    data["models"] = list(models)
+    return stable_hash(data)
+
+
 def new_run_id(study_id: str) -> str:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return f"{study_id}_{stamp}_{uuid.uuid4().hex[:8]}"
@@ -175,12 +192,28 @@ def init_run(
     path = run_dir(config, selected)
     path.mkdir(parents=True, exist_ok=True)
     meta_path = path / "run_meta.json"
+    current_config_hash = config_hash(config)
+    current_design_hash = design_hash(config, models)
     if meta_path.exists():
         meta = RunMeta.model_validate(read_json(meta_path))
+        if meta.study_id != config.study_id:
+            raise ValueError(f"run {selected} belongs to study {meta.study_id}, not {config.study_id}")
+        if sorted(meta.models) != sorted(models):
+            raise ValueError(f"run {selected} model set differs from metadata: {meta.models} vs {models}")
+        if meta.judge_model and meta.judge_model != config.judge_model:
+            raise ValueError(f"run {selected} judge differs from metadata: {meta.judge_model} vs {config.judge_model}")
+        if meta.config_hash and meta.config_hash != current_config_hash:
+            raise ValueError(f"run {selected} config hash differs from frozen metadata")
+        if meta.design_hash and meta.design_hash != current_design_hash:
+            raise ValueError(f"run {selected} design hash differs from frozen metadata")
+        if meta.frozen_config and not (path / "frozen_config.yml").exists():
+            raise ValueError(f"run {selected} is frozen but missing frozen_config.yml")
         meta.updated_at = now_iso()
         meta.calibration_active = calibration_active
         # Contamination is sticky: once the tuning loop ran in this run dir it stays flagged.
         meta.contaminated = meta.contaminated or calibration_active
+        meta.config_hash = meta.config_hash or current_config_hash
+        meta.design_hash = meta.design_hash or current_design_hash
     else:
         meta = RunMeta(
             run_id=selected,
@@ -194,6 +227,8 @@ def init_run(
             calibration_active=calibration_active,
             blind_role_inference=config.blind_role_inference,
             contaminated=calibration_active,
+            config_hash=current_config_hash,
+            design_hash=current_design_hash,
         )
     write_json(meta_path, meta.model_dump(mode="json"))
     if frozen_config:
@@ -278,4 +313,4 @@ def read_csv(path: Path) -> list[dict[str, str]]:
 
 
 def write_human_ratings(path: Path, ratings: list[HumanRatingRecord]) -> None:
-    append_jsonl(path, ratings)
+    write_jsonl(path, ratings)

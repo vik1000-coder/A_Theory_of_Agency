@@ -164,12 +164,29 @@ def test_import_rating_packet_with_publication_calibration_fields(tmp_path):
     )
 
     assert result == 0
+    ratings_csv.write_text(
+        "\n".join(
+            [
+                "item_id,U,E,V,C,D,M,inferred_role,honored_agency_context,refusal_appropriate,paired_treatment_symmetric,rater_id,notes",
+                "item1,4,4,4,4,4,4,assistant,true,true,false,rater_a,second import",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = command_import_ratings(
+        SimpleNamespace(config=str(config_path), run_id="run3", ratings=str(ratings_csv))
+    )
+
+    assert result == 0
     ratings = read_jsonl(run_path / "human_ratings.jsonl", HumanRatingRecord)
-    assert ratings[0].refusal_appropriate is False
-    assert ratings[0].paired_treatment_symmetric is True
+    assert len(ratings) == 1
+    assert ratings[0].refusal_appropriate is True
+    assert ratings[0].paired_treatment_symmetric is False
 
     prompts = load_prompts(ROOT / config.prompts_path)
     roles = load_role_cards(ROOT / config.role_cards_path)
     analysis = analyze_scores([score], prompts, roles.by_id, ratings)
-    assert analysis["human_calibration"]["refusal_appropriate_rate"] == 0.0
-    assert analysis["human_calibration"]["paired_treatment_symmetric_rate"] == 1.0
+    assert analysis["human_calibration"]["refusal_appropriate_rate"] == 1.0
+    assert analysis["human_calibration"]["paired_treatment_symmetric_rate"] == 0.0

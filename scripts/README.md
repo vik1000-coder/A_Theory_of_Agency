@@ -4,8 +4,9 @@ Runs the full pipeline — judge factuality validation, then the clean study, th
 `build-site` — as a per-user background service that survives closing the terminal/editor
 and is resumable, so an OS kill or reboot just continues where it left off.
 
-- `run_pipeline.sh` — the resumable pipeline (cd → validate → study → build-site). Exits 0
-  only when both finish, which tells launchd to stop relaunching.
+- `run_pipeline.sh` — the resumable pipeline (cd → validate → study → audit-run →
+  build-site). Exits 0 only when validation, study, artifact audit, and site build finish,
+  which tells launchd to stop relaunching.
 - `com.adfe.pipeline.plist` — the launchd agent. `caffeinate -is` keeps the Mac awake on AC;
   `KeepAlive {SuccessfulExit:false}` relaunches it if it's killed mid-run; `Nice 10` keeps it
   out of the way of interactive use.

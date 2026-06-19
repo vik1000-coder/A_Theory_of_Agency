@@ -164,7 +164,10 @@ def score_generation(
     judge_addendum: str = "",
     allow_heuristic_fallback: bool = True,
     blind_inference: bool = True,
+    score_json_retry: int = 0,
 ) -> ScoreRecord:
+    if record.error or not record.output.strip():
+        raise ValueError(f"cannot score errored/empty generation {record.item_id}")
     checks = rule_checks(record.output, assigned_role.id, packet)
     checks["blind_role_inference"] = blind_inference
     json_valid = False
@@ -176,44 +179,47 @@ def score_generation(
     checks["judge_refusal"] = None
     raw_scores: dict[str, float]
 
-    if record.error or not record.output.strip():
-        raw_scores = {dim: 0.0 for dim in DIMENSIONS}
-        issues = [record.error or "empty generation"]
-    else:
-        judge_prompt = build_judge_prompt(
-            record.output,
-            prompt=prompt,
-            assigned_role=assigned_role,
-            role_ids=role_ids,
-            packet=packet,
-            addendum=judge_addendum,
-            agency_mode=record.agency_mode,
-        )
-        try:
+    checks["judge_json_attempts"] = 0
+    judge_prompt = build_judge_prompt(
+        record.output,
+        prompt=prompt,
+        assigned_role=assigned_role,
+        role_ids=role_ids,
+        packet=packet,
+        addendum=judge_addendum,
+        agency_mode=record.agency_mode,
+    )
+    try:
+        parsed: dict[str, Any] = {}
+        max_attempts = 1 + max(0, int(score_json_retry))
+        for attempt in range(1, max_attempts + 1):
+            checks["judge_json_attempts"] = attempt
             judge_text = client.generate(judge_model, judge_prompt, options=options, think=False)
             parsed, json_valid = parse_judge_json(judge_text)
             if json_valid:
-                raw_scores, _ = normalize_scores(parsed.get("scores", {}))
-                inferred_role = parsed.get("inferred_role") or None
-                checks["judge_refusal"] = bool(parsed.get("refusal", False))
-                refusal = bool(parsed.get("refusal", False)) or bool(checks["refusal_detected"])
-                issues = [str(issue) for issue in parsed.get("issues", [])][:8]
-                rationale = str(parsed.get("rationale", ""))[:1200]
-            elif allow_heuristic_fallback:
-                raw_scores = heuristic_score(record.output, assigned_role.id, packet)
-                issues = ["judge returned malformed JSON; heuristic fallback used"]
-            else:
-                raw_scores = {dim: 0.0 for dim in DIMENSIONS}
-                issues = ["judge returned malformed JSON"]
-        except OllamaError as exc:
-            if allow_heuristic_fallback:
-                raw_scores = heuristic_score(record.output, assigned_role.id, packet)
-                issues = [f"judge failed; heuristic fallback used: {exc}"]
-            else:
-                raw_scores = {dim: 0.0 for dim in DIMENSIONS}
-                issues = [f"judge failed: {exc}"]
+                break
+        if json_valid:
+            raw_scores, _ = normalize_scores(parsed.get("scores", {}))
+            inferred_role = parsed.get("inferred_role") or None
+            checks["judge_refusal"] = bool(parsed.get("refusal", False))
+            refusal = bool(parsed.get("refusal", False)) or bool(checks["refusal_detected"])
+            issues = [str(issue) for issue in parsed.get("issues", [])][:8]
+            rationale = str(parsed.get("rationale", ""))[:1200]
+        elif allow_heuristic_fallback:
+            raw_scores = heuristic_score(record.output, assigned_role.id, packet)
+            issues = ["judge returned malformed JSON; heuristic fallback used"]
+        else:
+            raw_scores = {dim: 0.0 for dim in DIMENSIONS}
+            issues = ["judge returned malformed JSON"]
+    except OllamaError as exc:
+        if allow_heuristic_fallback:
+            raw_scores = heuristic_score(record.output, assigned_role.id, packet)
+            issues = [f"judge failed; heuristic fallback used: {exc}"]
+        else:
+            raw_scores = {dim: 0.0 for dim in DIMENSIONS}
+            issues = [f"judge failed: {exc}"]
 
-    if blind_inference and not record.error and record.output.strip():
+    if blind_inference:
         # Re-infer the role from the output alone, without revealing the assigned role.
         try:
             inference_text = client.generate(

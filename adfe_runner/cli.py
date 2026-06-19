@@ -10,6 +10,8 @@ from rich.console import Console
 from rich.table import Table
 
 from .analysis import analyze_scores, observations_markdown
+from .backends import API_PREFIXES, RoutedClient, parse_model_spec
+from .integrity import audit_run, repair_run, require_unique_item_ids
 from .io import (
     append_jsonl,
     filter_prompts,
@@ -31,7 +33,6 @@ from .io import (
     write_json,
     write_jsonl,
 )
-from .backends import RoutedClient
 from .ollama import OllamaClient, OllamaError
 from .publication import generate_publication_artifacts
 from .prompting import build_generation_prompt
@@ -88,6 +89,21 @@ def load_all(config_path: str) -> tuple[StudyConfig, list, Any, dict]:
     return config, prompts, roles_file, packets
 
 
+def effective_config_path(config_path: str, run_id: str | None) -> Path:
+    base_config = load_config(config_path)
+    if run_id:
+        frozen_path = run_dir(base_config, run_id) / "frozen_config.yml"
+        if frozen_path.exists():
+            return frozen_path
+    return resolve_path(config_path)
+
+
+def load_all_for_run(config_path: str, run_id: str | None) -> tuple[Path, StudyConfig, list, Any, dict]:
+    effective_path = effective_config_path(config_path, run_id)
+    config, prompts, roles_file, packets = load_all(str(effective_path))
+    return effective_path, config, prompts, roles_file, packets
+
+
 def command_doctor(args: argparse.Namespace) -> int:
     config, prompts, roles_file, packets = load_all(args.config)
     client = RoutedClient(config.ollama_url)
@@ -108,15 +124,17 @@ def command_doctor(args: argparse.Namespace) -> int:
     else:
         table.add_row("Pair analogy", f"{pair_audit['n_pairs']} pairs structurally analogous")
     try:
-        installed = client.tags()
-        missing = sorted(set(required) - set(installed))
-        if missing:
-            table.add_row("Ollama models", f"missing: {', '.join(missing)}")
-            console.print(table)
-            return 2
-        table.add_row("Ollama models", f"available: {', '.join(required)}")
+        client.ensure_models(required)
+        local = [model for model in required if parse_model_spec(model)[0] == "ollama"]
+        remote = [model for model in required if parse_model_spec(model)[0] in API_PREFIXES]
+        status = []
+        if local:
+            status.append(f"local: {', '.join(local)}")
+        if remote:
+            status.append(f"remote: {', '.join(remote)}")
+        table.add_row("Models", "; ".join(status) or "none")
     except OllamaError as exc:
-        table.add_row("Ollama", f"failed: {exc}")
+        table.add_row("Models", f"failed: {exc}")
         console.print(table)
         return 2
     console.print(table)
@@ -135,6 +153,7 @@ def generate_records(
     client: OllamaClient,
     existing_ids: set[str] | None = None,
     out_path: Path | None = None,
+    error_path: Path | None = None,
 ) -> list[GenerationRecord]:
     options = generation_options(config)
     existing_ids = existing_ids or set()
@@ -179,8 +198,12 @@ def generate_records(
             calibration_id="active" if state.active_generation_addendum or state.active_judge_addendum else None,
             error=error,
         )
+        if error:
+            if error_path is not None:
+                append_jsonl(error_path, [record])
+            continue
         records.append(record)
-        if out_path is not None:  # persist immediately so a mid-run kill loses nothing
+        if out_path is not None:  # persist successful rows immediately so a mid-run kill loses nothing
             append_jsonl(out_path, [record])
     if skipped:
         console.print(f"[dim]Resumed: skipped {skipped} already-generated items[/dim]")
@@ -188,11 +211,11 @@ def generate_records(
 
 
 def command_generate(args: argparse.Namespace) -> int:
-    config, prompts, roles_file, packets = load_all(args.config)
+    effective_path, config, prompts, roles_file, packets = load_all_for_run(args.config, args.run_id)
     models = parse_models(args.models, config)
     client = RoutedClient(config.ollama_url)
     client.ensure_models(models)
-    run_id, path = init_run(config, args.config, models, frozen_config=False, run_id=args.run_id)
+    run_id, path = init_run(config, str(effective_path), models, frozen_config=False, run_id=args.run_id)
     state = load_calibration_state(path)
     selected = select_batch(
         prompts,
@@ -207,7 +230,7 @@ def command_generate(args: argparse.Namespace) -> int:
     existing_ids = {record.item_id for record in read_jsonl(path / "generations.jsonl", GenerationRecord)}
     records = generate_records(
         config, prompts, roles_file, packets, selected, run_id, args.cycle, state, client,
-        existing_ids, out_path=path / "generations.jsonl",
+        existing_ids, out_path=path / "generations.jsonl", error_path=path / "generation_errors.jsonl",
     )
     console.print(f"Wrote {len(records)} generations to {path / 'generations.jsonl'}")
     console.print(f"run_id={run_id}")
@@ -228,7 +251,11 @@ def score_records(
     prompt_map = {prompt.id: prompt for prompt in prompts}
     role_ids = [role.id for role in roles_file.roles]
     state = load_calibration_state(run_path)
-    scored_item_ids = set() if force else {score.item_id for score in read_jsonl(run_path / "scores.jsonl", ScoreRecord)}
+    require_unique_item_ids(records, "generation")
+    existing_scores = read_jsonl(run_path / "scores.jsonl", ScoreRecord)
+    if not force:
+        require_unique_item_ids(existing_scores, "score")
+    scored_item_ids = set() if force else {score.item_id for score in existing_scores}
     pending_records = [record for record in records if record.item_id not in scored_item_ids]
     new_scores = []
     total = len(pending_records)
@@ -252,6 +279,7 @@ def score_records(
             judge_addendum=state.active_judge_addendum,
             allow_heuristic_fallback=config.allow_heuristic_fallback,
             blind_inference=config.blind_role_inference,
+            score_json_retry=config.score_json_retry,
         )
         new_scores.append(score)
         if out_path is not None and not force:  # persist immediately; resume skips scored items
@@ -260,7 +288,7 @@ def score_records(
 
 
 def command_score(args: argparse.Namespace) -> int:
-    config, prompts, roles_file, packets = load_all(args.config)
+    _effective_path, config, prompts, roles_file, packets = load_all_for_run(args.config, args.run_id)
     client = RoutedClient(config.ollama_url)
     client.ensure_models([config.judge_model])
     path = run_dir(config, args.run_id)
@@ -283,9 +311,10 @@ def command_rescore(args: argparse.Namespace) -> int:
 
 
 def command_analyze(args: argparse.Namespace) -> int:
-    config, prompts, roles_file, _packets = load_all(args.config)
+    _effective_path, config, prompts, roles_file, _packets = load_all_for_run(args.config, args.run_id)
     path = run_dir(config, args.run_id)
     scores = read_jsonl(path / "scores.jsonl", ScoreRecord)
+    require_unique_item_ids(scores, "score")
     human = read_jsonl(path / "human_ratings.jsonl", HumanRatingRecord) if args.with_human_calibration else []
     analysis = analyze_scores(scores, prompts, roles_file.by_id, human)
     write_json(path / "analysis.json", analysis)
@@ -345,7 +374,7 @@ def accept_pending(previous: dict[str, Any] | None, current: dict[str, Any], sta
 
 
 def command_iterate(args: argparse.Namespace) -> int:
-    config, prompts, roles_file, packets = load_all(args.config)
+    effective_path, config, prompts, roles_file, packets = load_all_for_run(args.config, args.run_id)
     models = parse_models(args.models, config)
     # Runs are frozen by default. The prompt-tuning loop is a confound for any reported
     # number (it optimizes the generation+judge prompts toward the role-fit metric), so it
@@ -361,7 +390,7 @@ def command_iterate(args: argparse.Namespace) -> int:
     client = RoutedClient(config.ollama_url)
     client.ensure_models(sorted(set(models + [config.judge_model])))
     run_id, path = init_run(
-        config, args.config, models, frozen_config=not calibrate, run_id=args.run_id, calibration_active=calibrate
+        config, str(effective_path), models, frozen_config=not calibrate, run_id=args.run_id, calibration_active=calibrate
     )
     previous_cycle_analysis: dict[str, Any] | None = None
     for cycle in range(args.cycles):
@@ -380,12 +409,13 @@ def command_iterate(args: argparse.Namespace) -> int:
         existing_ids = {record.item_id for record in read_jsonl(path / "generations.jsonl", GenerationRecord)}
         generate_records(
             config, prompts, roles_file, packets, selected, run_id, cycle, state, client,
-            existing_ids, out_path=path / "generations.jsonl",
+            existing_ids, out_path=path / "generations.jsonl", error_path=path / "generation_errors.jsonl",
         )
         # Score every generated-but-unscored item (covers resume after a scoring-phase kill).
         all_records = read_jsonl(path / "generations.jsonl", GenerationRecord)
         score_records(config, prompts, roles_file, packets, all_records, path, client, out_path=path / "scores.jsonl")
         scores = read_jsonl(path / "scores.jsonl", ScoreRecord)
+        require_unique_item_ids(scores, "score")
         analysis = analyze_scores(scores, prompts, roles_file.by_id)
         write_json(path / "analysis.json", analysis)
         (path / "observations.md").write_text(observations_markdown(analysis), encoding="utf-8")
@@ -437,7 +467,6 @@ def select_targeted_rating_items(
         (record.cycle, record.model, record.role, record.agency_mode, record.prompt_id): record
         for record in records
     }
-    score_by_id = {score.item_id: score for score in scores}
     ordered_ids: list[str] = []
 
     def add_item(item_id: str | None) -> None:
@@ -572,7 +601,7 @@ def command_export_ratings(args: argparse.Namespace) -> int:
 
 
 def command_import_ratings(args: argparse.Namespace) -> int:
-    config = load_config(args.config)
+    config = load_config(effective_config_path(args.config, args.run_id))
     path = run_dir(config, args.run_id)
     generations = {record.item_id for record in read_jsonl(path / "generations.jsonl", GenerationRecord)}
     rows = read_csv(resolve_path(args.ratings))
@@ -611,13 +640,17 @@ def command_import_ratings(args: argparse.Namespace) -> int:
         for error in errors[:20]:
             console.print(f"[red]{error}[/red]")
         return 2
-    write_human_ratings(path / "human_ratings.jsonl", ratings)
+    existing = read_jsonl(path / "human_ratings.jsonl", HumanRatingRecord)
+    by_key = {(rating.item_id, rating.rater_id): rating for rating in existing}
+    for rating in ratings:
+        by_key[(rating.item_id, rating.rater_id)] = rating
+    write_human_ratings(path / "human_ratings.jsonl", list(by_key.values()))
     console.print(f"Imported {len(ratings)} human ratings into {path / 'human_ratings.jsonl'}")
     return 0
 
 
 def command_publish_artifacts(args: argparse.Namespace) -> int:
-    config, prompts, roles_file, _packets = load_all(args.config)
+    _effective_path, config, prompts, roles_file, _packets = load_all_for_run(args.config, args.run_id)
     path = run_dir(config, args.run_id)
     scores = read_jsonl(path / "scores.jsonl", ScoreRecord)
     human = read_jsonl(path / "human_ratings.jsonl", HumanRatingRecord)
@@ -684,6 +717,9 @@ def command_build_site(args: argparse.Namespace) -> int:
     from .site import build_summary, write_site
 
     root = Path.cwd()
+    if not args.run_id and not args.latest:
+        console.print("[red]build-site now requires --run-id, or pass --latest explicitly[/red]")
+        return 2
     run_dir = (root / "runs" / args.run_id) if args.run_id else None
     if run_dir is not None and not (run_dir / "analysis.json").is_file():
         console.print(f"[red]run {args.run_id} has no analysis.json (run `analyze` first)[/red]")
@@ -698,6 +734,49 @@ def command_build_site(args: argparse.Namespace) -> int:
     console.print(f"- run: {prov.get('run_id')} (contaminated={prov.get('contaminated')}, n_scores={prov.get('n_scores')})")
     console.print(f"- judge: {judge.get('judge_model')} kappa={judge.get('cohen_kappa')} acc={judge.get('accuracy')}")
     console.print(f"Commit {docs_dir}/ and push; GitHub Pages will redeploy.")
+    return 0
+
+
+def command_audit_run(args: argparse.Namespace) -> int:
+    config = load_config(effective_config_path(args.config, args.run_id))
+    report = audit_run(config, args.run_id, expect_full=args.expect_full, allow_contaminated=args.allow_contaminated)
+    table = Table(title=f"ADFE Run Audit: {args.run_id}")
+    table.add_column("Check")
+    table.add_column("Status")
+    for key, value in report["metrics"].items():
+        table.add_row(key, str(value))
+    if report["errors"]:
+        for error in report["errors"]:
+            table.add_row("ERROR", error)
+    if report["warnings"]:
+        for warning in report["warnings"]:
+            table.add_row("WARN", warning)
+    console.print(table)
+    return 0 if report["ok"] else 2
+
+
+def command_repair_run(args: argparse.Namespace) -> int:
+    if not args.backup:
+        raise ValueError("repair-run requires --backup")
+    if not (args.drop_error_generations or args.dedupe):
+        raise ValueError("repair-run needs --drop-error-generations and/or --dedupe")
+    _effective_path, config, prompts, roles_file, _packets = load_all_for_run(args.config, args.run_id)
+    result = repair_run(
+        config,
+        args.run_id,
+        backup=args.backup,
+        drop_error_generations=args.drop_error_generations,
+        dedupe=args.dedupe,
+    )
+    path = run_dir(config, args.run_id)
+    scores = read_jsonl(path / "scores.jsonl", ScoreRecord)
+    require_unique_item_ids(scores, "score")
+    analysis = analyze_scores(scores, prompts, roles_file.by_id)
+    write_json(path / "analysis.json", analysis)
+    (path / "observations.md").write_text(observations_markdown(analysis), encoding="utf-8")
+    for key, value in result.items():
+        console.print(f"{key}: {value}")
+    console.print(f"Rewrote analysis for {args.run_id}")
     return 0
 
 
@@ -770,6 +849,21 @@ def build_parser() -> argparse.ArgumentParser:
     publish_artifacts.add_argument("--max-calibration-items", type=int, default=120)
     publish_artifacts.set_defaults(func=command_publish_artifacts)
 
+    audit_run_parser = sub.add_parser("audit-run")
+    audit_run_parser.add_argument("--config", default=argparse.SUPPRESS)
+    audit_run_parser.add_argument("--run-id", required=True)
+    audit_run_parser.add_argument("--expect-full", action="store_true")
+    audit_run_parser.add_argument("--allow-contaminated", action="store_true")
+    audit_run_parser.set_defaults(func=command_audit_run)
+
+    repair_run_parser = sub.add_parser("repair-run")
+    repair_run_parser.add_argument("--config", default=argparse.SUPPRESS)
+    repair_run_parser.add_argument("--run-id", required=True)
+    repair_run_parser.add_argument("--backup", action="store_true")
+    repair_run_parser.add_argument("--drop-error-generations", action="store_true")
+    repair_run_parser.add_argument("--dedupe", action="store_true")
+    repair_run_parser.set_defaults(func=command_repair_run)
+
     validate_judge = sub.add_parser("validate-judge")
     validate_judge.add_argument("--config", default=argparse.SUPPRESS)
     validate_judge.add_argument("--judge", default="qwen3:8b")
@@ -783,7 +877,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     build_site = sub.add_parser("build-site")
     build_site.add_argument("--config", default=argparse.SUPPRESS)
-    build_site.add_argument("--run-id", help="run id under runs/; defaults to latest run with analysis.json")
+    build_site.add_argument("--run-id", help="run id under runs/")
+    build_site.add_argument("--latest", action="store_true", help="explicitly use latest run with analysis.json")
     build_site.add_argument("--validation-dir", help="judge_validation_* dir; defaults to latest")
     build_site.add_argument("--docs-dir", default="docs")
     build_site.set_defaults(func=command_build_site)

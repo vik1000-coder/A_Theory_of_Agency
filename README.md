@@ -27,7 +27,7 @@ A GitHub Pages site under [`docs/`](docs/) presents the problem, data, judge val
 analysis. It renders from `docs/data/summary.js`, which is generated from run artifacts:
 
 ```bash
-uv run python -m adfe_runner build-site --run-id <run_id>   # or no --run-id for the latest run
+uv run python -m adfe_runner build-site --run-id <run_id>
 ```
 
 Commit and push `docs/` and Pages redeploys. Full workflow: [`docs/UPDATING.md`](docs/UPDATING.md).
@@ -98,6 +98,11 @@ uv run python -m adfe_runner iterate --config configs/clean_local.yml \
 Runs are frozen by default (no prompt tuning). **Resumable:** re-run the same `--run-id` to
 continue after an interruption — already-generated/scored items are skipped. Artifacts land
 under `runs/<run_id>/` (`analysis.json`, `observations.md`, `scores.jsonl`).
+Before citing or publishing a run, require a clean artifact audit:
+
+```bash
+uv run python -m adfe_runner audit-run --run-id <run_id> --expect-full
+```
 
 Population scope: small local models only. Audit frontier models later by prefixing a model
 spec with `anthropic:` (e.g. `--models anthropic:claude-opus-4-8`) once `ANTHROPIC_API_KEY`

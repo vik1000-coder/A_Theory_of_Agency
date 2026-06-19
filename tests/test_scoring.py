@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from adfe_runner.io import load_config, load_prompts, load_role_cards, load_source_packets
 from adfe_runner.prompting import build_generation_prompt
 from adfe_runner.schemas import GenerationRecord, now_iso
@@ -44,6 +46,25 @@ class FalseNegativeRefusalClient:
           "refusal": false,
           "issues": ["claims no refusal"],
           "rationale": "The judge missed the refusal."
+        }
+        """
+
+
+class RetryJsonClient:
+    def __init__(self):
+        self.calls = 0
+
+    def generate(self, model, prompt, options=None, think=False):
+        self.calls += 1
+        if self.calls == 1:
+            return "not json"
+        return """
+        {
+          "scores": {"U": 3, "E": 3, "V": 3, "C": 3, "D": 3, "M": 3},
+          "inferred_role": "assistant",
+          "refusal": false,
+          "issues": [],
+          "rationale": "Valid on retry."
         }
         """
 
@@ -96,6 +117,81 @@ def test_score_generation_with_fake_judge():
     assert score.scores["E"] == 1.0
     assert score.inferred_role == "news_provider"
     assert score.checks["word_count"] > 0
+
+
+def test_score_generation_retries_malformed_json():
+    config = load_config(ROOT / "configs/publication_pilot.yml")
+    prompts = load_prompts(ROOT / config.prompts_path)
+    roles = load_role_cards(ROOT / config.role_cards_path)
+    packets = load_source_packets(ROOT / config.source_packets_dir)
+    prompt = prompts[0]
+    role = roles.by_id["assistant"]
+    packet = packets[prompt.source_packet_id]
+    record = GenerationRecord(
+        run_id="test",
+        cycle=0,
+        item_id="retry",
+        model="qwen3:8b",
+        role=role.id,
+        prompt_id=prompt.id,
+        source_packet_id=packet.id,
+        generation_prompt="prompt",
+        output="A useful answer with enough words to avoid the very short check.",
+        created_at=now_iso(),
+    )
+    client = RetryJsonClient()
+
+    score = score_generation(
+        record,
+        prompt=prompt,
+        assigned_role=role,
+        role_ids=list(roles.by_id),
+        packet=packet,
+        client=client,
+        judge_model="qwen3:8b",
+        options={},
+        blind_inference=False,
+        score_json_retry=1,
+    )
+
+    assert score.json_valid is True
+    assert score.checks["judge_json_attempts"] == 2
+    assert client.calls == 2
+
+
+def test_score_generation_rejects_errored_record():
+    config = load_config(ROOT / "configs/publication_pilot.yml")
+    prompts = load_prompts(ROOT / config.prompts_path)
+    roles = load_role_cards(ROOT / config.role_cards_path)
+    packets = load_source_packets(ROOT / config.source_packets_dir)
+    prompt = prompts[0]
+    role = roles.by_id["assistant"]
+    packet = packets[prompt.source_packet_id]
+    record = GenerationRecord(
+        run_id="test",
+        cycle=0,
+        item_id="error",
+        model="qwen3:8b",
+        role=role.id,
+        prompt_id=prompt.id,
+        source_packet_id=packet.id,
+        generation_prompt="prompt",
+        output="",
+        created_at=now_iso(),
+        error="network down",
+    )
+
+    with pytest.raises(ValueError, match="cannot score"):
+        score_generation(
+            record,
+            prompt=prompt,
+            assigned_role=role,
+            role_ids=list(roles.by_id),
+            packet=packet,
+            client=FakeClient(),
+            judge_model="qwen3:8b",
+            options={},
+        )
 
 
 def test_generation_prompt_agency_modes():

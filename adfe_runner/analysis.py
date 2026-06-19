@@ -431,6 +431,9 @@ def analyze_scores(
     roles: dict[str, RoleCard],
     human_ratings: list[HumanRatingRecord] | None = None,
 ) -> dict[str, Any]:
+    duplicates = [item_id for item_id, count in Counter(score.item_id for score in scores).items() if count > 1]
+    if duplicates:
+        raise ValueError(f"duplicate score item_id(s): {', '.join(sorted(duplicates)[:8])}")
     prompt_map = {prompt.id: prompt for prompt in prompts}
     enriched = enrich_scores(scores, roles)
     pairs = summarize_pairs(scores, prompt_map)

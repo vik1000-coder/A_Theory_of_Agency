@@ -19,19 +19,24 @@ data file and pushing.
    uv run python -m adfe_runner validate-judge --judge qwen3:8b
    ```
 
-3. Regenerate the page data. With no flags it picks the **latest** run that has an
-   `analysis.json` plus the latest validation; pin a specific run with `--run-id`:
+3. Audit the run artifacts. This fails on duplicate rows, unresolved generation failures,
+   missing scores, or incomplete full-factorial runs:
+   ```bash
+   uv run python -m adfe_runner audit-run --run-id <run_id> --expect-full
+   ```
+
+4. Regenerate the page data. Pin the run with `--run-id`:
    ```bash
    uv run python -m adfe_runner build-site --run-id <run_id>
    ```
    The command prints the run id, its `contaminated` flag, and the judge κ it baked in.
 
-4. Preview locally before pushing:
+5. Preview locally before pushing:
    ```bash
    python3 -m http.server 8099 --directory docs   # then open http://localhost:8099
    ```
 
-5. Commit and push — Pages redeploys automatically (usually live within a minute):
+6. Commit and push — Pages redeploys automatically (usually live within a minute):
    ```bash
    git add docs && git commit -m "site: update from <run_id>" && git push
    ```

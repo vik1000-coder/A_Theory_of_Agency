@@ -8,7 +8,7 @@
 # It exits 0 only when both the factuality validation and the study have
 # completed, which tells launchd to stop relaunching.
 
-set -u
+set -euo pipefail
 REPO="$HOME/Developer/A_Theory_of_Agency"
 cd "$REPO" || exit 1
 export PATH="/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
@@ -20,23 +20,30 @@ STUDY_JSON="runs/$RUN_ID/analysis.json"
 
 log() { echo "[$(date '+%Y-%m-%dT%H:%M:%S')] $*"; }
 
-# Already finished a previous time -> nothing to do, let launchd stop.
+# Already finished a previous time -> verify the marker still reflects good artifacts.
 if [ -f runs/PIPELINE_DONE ]; then
-  log "PIPELINE_DONE present; exiting 0"
+  log "PIPELINE_DONE present; verifying completed artifacts"
+  "$UV" run python -m adfe_runner audit-run --config configs/clean_local.yml \
+    --run-id "$RUN_ID" --expect-full
+  [ -f "$FACT_JSON" ] && [ -f "$STUDY_JSON" ]
+  log "PIPELINE_DONE verified; exiting 0"
   exit 0
 fi
 
 log "pipeline start (factuality checkpoint: $(wc -l < runs/judge_validation_factuality_${JUDGE/:/_}/results.jsonl 2>/dev/null || echo 0) items)"
 
 # 1) Judge validation on factuality (E). Resumes from checkpoint.
-"$UV" run python -m adfe_runner validate-judge --task factuality --judge "$JUDGE" || log "validate-judge exited $?"
+"$UV" run python -m adfe_runner validate-judge --task factuality --judge "$JUDGE"
 
 # 2) The clean study (frozen, held-out judge, full factorial). Resumes by run-id.
 "$UV" run python -m adfe_runner iterate --config configs/clean_local.yml \
-  --cycles 1 --batch-size all --run-id "$RUN_ID" || log "iterate exited $?"
+  --cycles 1 --batch-size all --run-id "$RUN_ID"
+
+"$UV" run python -m adfe_runner audit-run --config configs/clean_local.yml \
+  --run-id "$RUN_ID" --expect-full
 
 # 3) Regenerate the site data from the completed study (push is left to a human).
-"$UV" run python -m adfe_runner build-site --run-id "$RUN_ID" || log "build-site exited $?"
+"$UV" run python -m adfe_runner build-site --run-id "$RUN_ID"
 
 if [ -f "$FACT_JSON" ] && [ -f "$STUDY_JSON" ]; then
   log "pipeline COMPLETE"

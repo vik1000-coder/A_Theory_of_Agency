@@ -7,11 +7,15 @@ role-aware (circular) role inference, a circular headline metric, and unverified
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from adfe_runner.analysis import analyze_scores, interval_hypothesis_tests, refusal_label_agreement
 from adfe_runner.backends import RoutedClient, parse_model_spec
+from adfe_runner import cli as cli_module
+from adfe_runner.cli import command_doctor
 from adfe_runner.io import init_run, load_config, load_prompts, load_role_cards, read_json
 from adfe_runner.ollama import OllamaError
 from adfe_runner.prompting import build_role_inference_prompt
@@ -160,6 +164,27 @@ def test_routed_client_requires_key_for_api_models(monkeypatch):
         client.ensure_models(["anthropic:claude-opus-4-8"])
     with pytest.raises(OllamaError):
         client.generate("anthropic:claude-opus-4-8", "hi")
+
+
+def test_doctor_uses_routed_client_for_remote_models(monkeypatch, tmp_path):
+    config = load_config(ROOT / "configs/clean_local.yml").model_copy(update={"default_models": ["xai:grok-test"]})
+    config_path = tmp_path / "frontier.yml"
+    config_path.write_text(yaml.safe_dump(config.model_dump(mode="json")), encoding="utf-8")
+    seen: list[list[str]] = []
+
+    class FakeRoutedClient:
+        def __init__(self, ollama_url):
+            self.ollama_url = ollama_url
+
+        def ensure_models(self, models):
+            seen.append(models)
+
+    monkeypatch.setattr(cli_module, "RoutedClient", FakeRoutedClient)
+
+    result = command_doctor(SimpleNamespace(config=str(config_path), models=None))
+
+    assert result == 0
+    assert seen == [["qwen3:8b", "xai:grok-test"]]
 
 
 # ---------- Tier 4: pair analogy ----------

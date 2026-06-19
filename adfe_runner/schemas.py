@@ -206,6 +206,8 @@ class RunMeta(BaseModel):
     calibration_active: bool = False
     blind_role_inference: bool = True
     contaminated: bool = False  # True if the prompt-tuning loop was ever enabled for this run
+    config_hash: str = ""
+    design_hash: str = ""
 
 
 def now_iso() -> str:
