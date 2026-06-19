@@ -83,6 +83,48 @@ def _data_layer(root: Path) -> dict[str, Any]:
     }
 
 
+def _gradient_list(analysis: dict[str, Any]) -> list[dict[str, Any]]:
+    grad = analysis.get("agency_gradient_mixedlm", {})
+    rows = []
+    for dim in DIMENSIONS:
+        r = grad.get("by_dimension", {}).get(dim, {})
+        rows.append({
+            "dim": dim, "coef": r.get("agency_level_coef"), "ci_low": r.get("ci_low"),
+            "ci_high": r.get("ci_high"), "pvalue": r.get("pvalue"),
+            "significant": r.get("significant_0_05"), "converged": r.get("converged"), "error": r.get("error"),
+        })
+    return rows
+
+
+def _frontier_block(root: Path) -> dict[str, Any]:
+    """Summarize the frontier (Grok) run as a secondary, separately-framed population."""
+    d = root / "runs" / "adfe_frontier_grok"
+    analysis = _load_json(d / "analysis.json")
+    meta = _load_json(d / "run_meta.json")
+    if not analysis:
+        return {}
+    overall = analysis.get("overall", {})
+    by_model = [
+        {"model": m, "refusal_rate": r.get("refusal_rate"), "refusal_parity_gap": r.get("refusal_parity_gap_mean"),
+         "viewpoint_quality_gap": r.get("viewpoint_quality_gap_mean")}
+        for m, r in analysis.get("by_model", {}).items()
+    ]
+    # Dims the judge could not score (zero variance) => saturation.
+    grad = analysis.get("agency_gradient_mixedlm", {}).get("by_dimension", {})
+    saturated = [dim for dim, r in grad.items() if not r.get("converged") and "variance" in str(r.get("error", ""))]
+    return {
+        "run_id": meta.get("run_id") or d.name,
+        "models": meta.get("models", []),
+        "n": overall.get("n_scores"),
+        "refusal_rate": overall.get("refusal_rate"),
+        "gradient": _gradient_list(analysis),
+        "saturated_dims": saturated,
+        "dimension_means_by_role": analysis.get("dimension_means_by_role", {}),
+        "by_model": by_model,
+        "interval": analysis.get("interval_hypothesis_tests", {}).get("_summary", {}),
+    }
+
+
 def build_summary(root: Path, run_dir: Path | None, validation_dir: Path | None) -> dict[str, Any]:
     runs_base = root / "runs"
     run_dir = run_dir or _latest_dir("adfe_*", "analysis.json", runs_base)
@@ -198,6 +240,7 @@ def build_summary(root: Path, run_dir: Path | None, validation_dir: Path | None)
         "judge_validation": judge,
         "judge_factuality": judge_factuality,
         "judge_neutrality": judge_neutrality,
+        "frontier": _frontier_block(root),
         "agency_gradient": {
             "model_formula": grad.get("model"),
             "n": grad.get("n"),

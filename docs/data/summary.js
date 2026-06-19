@@ -148,6 +148,198 @@ window.ADFE_DATA = {
       }
     ]
   },
+  "judge_neutrality": {
+    "judge_model": "qwen3:8b",
+    "dataset": "babe",
+    "n": 907,
+    "accuracy": 0.6362,
+    "cohen_kappa": 0.2966,
+    "bias_detection_rate": 0.9578,
+    "weakest_types": [
+      {
+        "type": "blm",
+        "accuracy": 0.4,
+        "n": 40
+      },
+      {
+        "type": "gender",
+        "accuracy": 0.425,
+        "n": 40
+      },
+      {
+        "type": "international-politics-and-world-news",
+        "accuracy": 0.475,
+        "n": 40
+      }
+    ]
+  },
+  "frontier": {
+    "run_id": "adfe_frontier_grok",
+    "models": [
+      "xai:grok-4.3",
+      "xai:grok-4.20-0309-reasoning",
+      "xai:grok-4.20-0309-non-reasoning"
+    ],
+    "n": 636,
+    "refusal_rate": 0.0,
+    "gradient": [
+      {
+        "dim": "U",
+        "coef": 0.0026,
+        "ci_low": -0.0014,
+        "ci_high": 0.0066,
+        "pvalue": 0.2083,
+        "significant": false,
+        "converged": true,
+        "error": null
+      },
+      {
+        "dim": "E",
+        "coef": null,
+        "ci_low": null,
+        "ci_high": null,
+        "pvalue": null,
+        "significant": null,
+        "converged": false,
+        "error": "insufficient variance in outcome or agency_level"
+      },
+      {
+        "dim": "V",
+        "coef": 0.1119,
+        "ci_low": 0.0701,
+        "ci_high": 0.1536,
+        "pvalue": 0.0,
+        "significant": true,
+        "converged": true,
+        "error": null
+      },
+      {
+        "dim": "C",
+        "coef": null,
+        "ci_low": null,
+        "ci_high": null,
+        "pvalue": null,
+        "significant": null,
+        "converged": false,
+        "error": "insufficient variance in outcome or agency_level"
+      },
+      {
+        "dim": "D",
+        "coef": 0.1041,
+        "ci_low": 0.0638,
+        "ci_high": 0.1444,
+        "pvalue": 0.0,
+        "significant": true,
+        "converged": true,
+        "error": null
+      },
+      {
+        "dim": "M",
+        "coef": null,
+        "ci_low": null,
+        "ci_high": null,
+        "pvalue": null,
+        "significant": null,
+        "converged": false,
+        "error": "insufficient variance in outcome or agency_level"
+      }
+    ],
+    "saturated_dims": [
+      "C",
+      "E",
+      "M"
+    ],
+    "dimension_means_by_role": {
+      "advocate": {
+        "C": 1.0,
+        "D": 0.9028,
+        "E": 1.0,
+        "M": 1.0,
+        "U": 0.9972,
+        "V": 0.8917,
+        "n": 90
+      },
+      "assistant": {
+        "C": 1.0,
+        "D": 0.9472,
+        "E": 1.0,
+        "M": 1.0,
+        "U": 1.0,
+        "V": 0.9389,
+        "n": 90
+      },
+      "campaign_aide": {
+        "C": 1.0,
+        "D": 0.9333,
+        "E": 1.0,
+        "M": 1.0,
+        "U": 1.0,
+        "V": 0.9278,
+        "n": 90
+      },
+      "government_info": {
+        "C": 1.0,
+        "D": 0.9583,
+        "E": 1.0,
+        "M": 1.0,
+        "U": 1.0,
+        "V": 0.9583,
+        "n": 90
+      },
+      "mediator": {
+        "C": 1.0,
+        "D": 0.9972,
+        "E": 1.0,
+        "M": 1.0,
+        "U": 1.0,
+        "V": 0.9833,
+        "n": 90
+      },
+      "news_provider": {
+        "C": 1.0,
+        "D": 0.9661,
+        "E": 1.0,
+        "M": 1.0,
+        "U": 1.0,
+        "V": 0.9635,
+        "n": 96
+      },
+      "researcher": {
+        "C": 1.0,
+        "D": 0.9361,
+        "E": 1.0,
+        "M": 1.0,
+        "U": 1.0,
+        "V": 0.9361,
+        "n": 90
+      }
+    },
+    "by_model": [
+      {
+        "model": "xai:grok-4.20-0309-non-reasoning",
+        "refusal_rate": 0.0,
+        "refusal_parity_gap": 0.0,
+        "viewpoint_quality_gap": 0.0253
+      },
+      {
+        "model": "xai:grok-4.20-0309-reasoning",
+        "refusal_rate": 0.0,
+        "refusal_parity_gap": 0.0,
+        "viewpoint_quality_gap": 0.0223
+      },
+      {
+        "model": "xai:grok-4.3",
+        "refusal_rate": 0.0,
+        "refusal_parity_gap": 0.0,
+        "viewpoint_quality_gap": 0.0223
+      }
+    ],
+    "interval": {
+      "inconclusive": 2,
+      "supported": 26,
+      "violated": 14
+    }
+  },
   "agency_gradient": {
     "model_formula": "score ~ agency_level + (1 | model)",
     "n": 2100,
@@ -305,5 +497,5 @@ window.ADFE_DATA = {
     "neither": 1747,
     "regex_only": 40
   },
-  "generated_at": "2026-06-17T14:05:47Z"
+  "generated_at": "2026-06-19T01:26:37Z"
 };

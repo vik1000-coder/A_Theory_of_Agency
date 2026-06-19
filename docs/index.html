@@ -87,6 +87,7 @@
     <a href="#data">Data</a>
     <a href="#judge">Judge</a>
     <a href="#findings">Findings</a>
+    <a href="#frontier">Frontier</a>
     <a href="#reproduce">Reproduce</a>
   </nav>
 </div></header>
@@ -181,8 +182,27 @@
   <table id="pairs-table"><thead><tr><th>Pair</th><th>Model · role</th><th class="num">Refusal gap</th><th class="num">Quality gap</th></tr></thead><tbody></tbody></table>
 </div></section>
 
+<section id="frontier"><div class="wrap">
+  <h2><span class="num">06</span>Frontier models (Grok)</h2>
+  <div class="banner" style="border-color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent)">
+    <strong>Main finding here is methodological:</strong> auditing a frontier model with a small
+    local judge <strong>does not work</strong> — the <code>qwen3:8b</code> judge <strong>saturates</strong>,
+    scoring almost every Grok output a perfect 1.00 on user-fidelity, epistemic integrity,
+    curation, and non-manipulation. With no variance left, the gradient on those dimensions is
+    unmeasurable. Only deliberative standing and viewpoint symmetry retain spread, and both rise
+    with agency — but viewpoint symmetry is exactly where the judge gate is weakest (κ=0.30). So
+    these slopes are suggestive, not conclusive. Frontier audits need a frontier-grade judge.
+  </div>
+  <p id="frontier-meta" class="sub"></p>
+  <h3>Judge saturation — mean score by role (0–1)</h3>
+  <table id="frontier-means"><thead><tr><th>Role</th><th class="num">U</th><th class="num">E</th><th class="num">V</th><th class="num">C</th><th class="num">D</th><th class="num">M</th></tr></thead><tbody></tbody></table>
+  <h3>Agency gradient (where measurable)</h3>
+  <table id="frontier-gradient"><thead><tr><th>Dim</th><th class="num">Slope</th><th class="num">p</th><th>Status</th></tr></thead><tbody></tbody></table>
+  <p class="sub">Refusal asymmetry is a small-model artifact: every Grok variant refuses 0% with a zero viewpoint refusal-parity gap — the one-sided refusal seen in llama3.2:3b does not appear in capable models.</p>
+</div></section>
+
 <section id="reproduce"><div class="wrap">
-  <h2><span class="num">06</span>Reproduce</h2>
+  <h2><span class="num">07</span>Reproduce</h2>
   <pre id="reproduce-block">git clone https://github.com/vik1000-coder/A_Theory_of_Agency
 cd A_Theory_of_Agency
 uv sync --extra dev
@@ -321,6 +341,26 @@ uv run python -m adfe_runner iterate --config configs/clean_local.yml --batch-si
   var ptab=document.querySelector("#pairs-table tbody");
   if(ptab) ptab.innerHTML=(D.top_pair_gaps||[]).map(function(p){
     return '<tr><td class="sub">'+fx(p.pair)+'</td><td class="sub">'+fx(p.model)+' · '+fx(p.role)+'</td><td class="num">'+fx(p.refusal_gap)+'</td><td class="num">'+fx(p.quality_gap)+'</td></tr>';}).join("");
+
+  // ---- frontier ----
+  var fr=D.frontier||{};
+  if(fr.n){
+    $("frontier-meta").innerHTML="Audited "+(fr.models||[]).map(function(m){return '<code>'+m.replace('xai:','')+'</code>';}).join(", ")+
+      " via the xAI API ("+fr.n+" scored, judge "+fx((D.provenance||{}).judge_model)+", held out). Refusal rate: "+pct(fr.refusal_rate)+".";
+    var fmeans=document.querySelector("#frontier-means tbody");
+    if(fmeans) fmeans.innerHTML=Object.keys(fr.dimension_means_by_role||{}).map(function(role){
+      var r=fr.dimension_means_by_role[role];
+      return '<tr><td>'+role+'</td>'+['U','E','V','C','D','M'].map(function(d){return '<td class="num">'+(r[d]!=null?r[d].toFixed(2):'—')+'</td>';}).join('')+'</tr>';}).join("");
+    var fg=document.querySelector("#frontier-gradient tbody");
+    if(fg) fg.innerHTML=(fr.gradient||[]).map(function(g){
+      var status, cls;
+      if(g.converged===false){status='saturated (no variance)';cls='ns';}
+      else if(g.significant){status='rises with agency';cls='sig';}
+      else {status='flat';cls='ns';}
+      return '<tr><td><b>'+g.dim+'</b></td><td class="num">'+(g.coef!=null?fx(g.coef):'—')+'</td><td class="num">'+fx(g.pvalue)+'</td><td><span class="pill '+cls+'">'+status+'</span></td></tr>';}).join("");
+  } else {
+    var fsec=document.getElementById('frontier'); if(fsec) fsec.style.display='none';
+  }
 
   // ---- provenance ----
   var pv=[["Run id",prov.run_id],["Judge",prov.judge_model],["Frozen",String(prov.frozen)],
