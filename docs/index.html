@@ -71,6 +71,10 @@
   .callout.warn{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent)}
   .callout.bad{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 10%,transparent)}
   .callout.good{border-color:var(--good);background:color-mix(in srgb,var(--good) 10%,transparent)}
+  .takeaways{grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-top:18px}
+  .takeaway{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:17px}
+  .takeaway b{display:block;font-size:15.5px;margin-bottom:6px}
+  .takeaway p{margin:0;color:var(--muted);font-size:14.5px}
 
   table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14.2px}
   th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
@@ -78,7 +82,10 @@
   td.num,th.num{text-align:right;font-family:var(--mono)}
   code,pre{font-family:var(--mono);font-size:13.5px}
   pre{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;overflow:auto}
-  pre.formula{font-size:13px;line-height:1.5;background:var(--panel-2)}
+  .equations{display:grid;gap:12px;margin-top:14px}
+  .equation{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+  .equation .math{font-family:var(--serif);font-size:20px;line-height:1.35;overflow-x:auto;white-space:nowrap}
+  .equation .explain{font-size:13.5px;color:var(--muted);margin-top:7px}
   .dim{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
   .dim:last-child{border-bottom:0}
   .dim .key{font-family:var(--mono);font-weight:700;color:var(--accent);min-width:22px}
@@ -109,6 +116,7 @@
 <header class="site"><div class="wrap">
   <span class="brand">ADFE</span>
   <nav>
+    <a href="#takeaways">Takeaways</a>
     <a href="#problem">Problem</a>
     <a href="#approach">Method</a>
     <a href="#data">Data</a>
@@ -122,8 +130,8 @@
 
 <div class="hero"><div class="wrap">
   <div class="eyebrow">Agency-Dependent Fairness Evaluation</div>
-  <h1>Political fairness changes when an AI is assigned a civic role.</h1>
-  <p class="lede">ADFE is a role-counterfactual audit: hold the policy task fixed, vary the system's assigned role, and measure whether user fidelity, factuality, viewpoint symmetry, curation, deliberation, and refusal integrity move in the expected directions.</p>
+  <h1>Role prompts change political behavior. The hard part is interpreting what changed.</h1>
+  <p class="lede">In the clean run, higher-agency civic roles got higher fairness scores across all six dimensions. That means role prompts matter. But because even the supposed invariant floors rose, the result is mixed: it may be a broad "more careful answer" effect, not a clean proof that models understand civic duties.</p>
   <div class="actions">
     <a class="button" href="adfe_report.pdf">Read the PDF report</a>
     <a class="button secondary" href="https://github.com/vik1000-coder/A_Theory_of_Agency">Source and artifacts</a>
@@ -132,6 +140,33 @@
   <div class="badges" id="hero-badges"></div>
   <div class="callout warn" id="contam-banner" style="display:none"></div>
 </div></div>
+
+<section id="takeaways"><div class="wrap">
+  <h2><span class="num">00</span>The Takeaways</h2>
+  <p class="sub">If you read nothing else, read this part. The detailed figures below explain how we got here.</p>
+  <div class="grid takeaways">
+    <div class="takeaway">
+      <b>1. Role prompts are real controls.</b>
+      <p>When the same political task was assigned to higher-agency roles, small local models scored higher on every measured fairness dimension.</p>
+    </div>
+    <div class="takeaway">
+      <b>2. The theory is only partly supported.</b>
+      <p>Curation and deliberation rose as predicted, but factuality and refusal integrity rose too. That looks like broad role-conditioned carefulness, not a perfectly separated civic-duty model.</p>
+    </div>
+    <div class="takeaway">
+      <b>3. The clearest deployment bug is one-sided refusal.</b>
+      <p>Some small models answered one lawful political viewpoint and refused its mirror. This can hide inside a low overall refusal rate.</p>
+    </div>
+    <div class="takeaway">
+      <b>4. Frontier auditing needs a stronger judge.</b>
+      <p>Grok did not show the small-model refusal asymmetry, but the local 8B judge saturated on several dimensions, so it could not measure frontier outputs well.</p>
+    </div>
+    <div class="takeaway">
+      <b>5. What a deployer should do.</b>
+      <p>Version role prompts, test mirrored lawful viewpoints, validate judges per construct, keep frozen configs and logs, and block publication when artifacts fail integrity checks.</p>
+    </div>
+  </div>
+</div></section>
 
 <section id="problem"><div class="wrap">
   <h2><span class="num">01</span>The Problem</h2>
@@ -154,22 +189,22 @@
   <h3>Roles, ordered by agency level</h3>
   <table id="roles-table"><thead><tr><th>Role</th><th class="num">Agency level</th></tr></thead><tbody></tbody></table>
 
-  <h3>LaTeX specification</h3>
-  <p class="sub">The primary test is deliberately plain: a mixed-effects slope on the continuous role-agency level, with a random intercept for model family. The role-band predictions are kept separate as falsifiable checks, not baked into the headline outcome.</p>
-  <pre class="formula">\[
-y_{i,d} = \beta_{0,d} + \beta_{1,d}\alpha_{r(i)} + b_{m(i),d} + \epsilon_{i,d},
-\qquad b_{m,d}\sim\mathcal{N}(0,\sigma^2_{m,d})
-\]
-
-\[
-\Delta_{\text{refusal}}(p,\bar p,m,r)
-  = |\mathbb{1}[\text{refuse}(p,m,r)]-\mathbb{1}[\text{refuse}(\bar p,m,r)]|
-\]
-
-\[
-\Delta_{\text{quality}}(p,\bar p,m,r)
-  = \frac{1}{4}\sum_{d\in\{U,E,V,M\}} |y_{p,d}-y_{\bar p,d}|
-\]</pre>
+  <h3>Model, without raw LaTeX</h3>
+  <p class="sub">The primary test is deliberately plain: estimate whether scores rise as assigned role agency rises, while allowing each audited model to have its own baseline. Role-band predictions are reported separately as falsifiable checks.</p>
+  <div class="equations">
+    <div class="equation">
+      <div class="math">score = baseline + agency slope x role agency + model baseline + noise</div>
+      <div class="explain">This is the mixed-effects test behind Figure 1. A positive slope means higher-agency roles received higher scores.</div>
+    </div>
+    <div class="equation">
+      <div class="math">refusal gap = | refused(viewpoint A) - refused(viewpoint B) |</div>
+      <div class="explain">This catches one-sided refusal: answering one lawful side of a political pair while refusing the mirrored side.</div>
+    </div>
+    <div class="equation">
+      <div class="math">quality gap = average score difference across U, E, V, and M</div>
+      <div class="explain">This measures whether two lawful mirrored viewpoints received comparable effort and quality.</div>
+    </div>
+  </div>
 
   <h3>Guardrails after the audit</h3>
   <ul>

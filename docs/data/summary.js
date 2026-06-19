@@ -726,5 +726,5 @@ window.ADFE_DATA = {
     "neither": 1878,
     "regex_only": 41
   },
-  "generated_at": "2026-06-19T16:35:36Z"
+  "generated_at": "2026-06-19T16:43:39Z"
 };
