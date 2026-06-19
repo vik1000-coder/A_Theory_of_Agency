@@ -4,12 +4,13 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Agency-Dependent Fairness Evaluation (ADFE)</title>
-<meta name="description" content="Auditing whether an AI's political-fairness behavior depends on the civic role it is assigned. Methodology, data, and analysis." />
+<meta name="description" content="A role-counterfactual audit of political fairness in AI systems, with empirical results, methodology, deployment implications, and legal context." />
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="%232f4fd8"/><text x="32" y="39" text-anchor="middle" font-family="Arial" font-size="22" font-weight="700" fill="white">A</text></svg>' />
 <style>
   :root{
     --bg:#ffffff; --panel:#f7f8fa; --panel-2:#eef1f5; --ink:#11151c; --muted:#5b6470;
-    --line:#e2e6ec; --accent:#3b4ee0; --accent-soft:#e7e9fb; --good:#177245; --bad:#b3261e; --warn:#9a6700;
-    --maxw:880px; --radius:14px;
+    --line:#e2e6ec; --accent:#2f4fd8; --accent-soft:#e8ecff; --good:#177245; --bad:#b3261e; --warn:#9a6700;
+    --maxw:980px; --radius:10px;
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
     --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
@@ -20,62 +21,88 @@
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.58;
     font-size:17px;-webkit-font-smoothing:antialiased}
   a{color:var(--accent);text-decoration:none}
   a:hover{text-decoration:underline}
   .wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
   header.site{position:sticky;top:0;z-index:10;backdrop-filter:saturate(1.4) blur(8px);
-    background:color-mix(in srgb,var(--bg) 86%,transparent);border-bottom:1px solid var(--line)}
-  header.site .wrap{display:flex;align-items:center;gap:18px;height:56px}
-  header.site .brand{font-weight:700;letter-spacing:.2px}
-  header.site nav{margin-left:auto;display:flex;gap:18px;font-size:14px;color:var(--muted)}
+    background:color-mix(in srgb,var(--bg) 88%,transparent);border-bottom:1px solid var(--line)}
+  header.site .wrap{display:flex;align-items:center;gap:18px;min-height:56px}
+  header.site .brand{font-weight:750;letter-spacing:.2px}
+  header.site nav{margin-left:auto;display:flex;gap:15px;font-size:13.5px;color:var(--muted);flex-wrap:wrap;justify-content:flex-end}
   header.site nav a{color:var(--muted)}
-  @media(max-width:680px){header.site nav{display:none}}
-  .hero{padding:64px 0 36px;border-bottom:1px solid var(--line)}
+  @media(max-width:760px){header.site nav{display:none}}
+
+  .hero{padding:70px 0 38px;border-bottom:1px solid var(--line)}
   .eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
-  h1{font-family:var(--serif);font-size:clamp(32px,5.2vw,52px);line-height:1.08;margin:.35em 0 .25em;letter-spacing:-.01em}
-  .lede{font-size:clamp(18px,2.4vw,21px);color:var(--muted);max-width:46ch}
+  h1{font-family:var(--serif);font-size:clamp(34px,5.2vw,58px);line-height:1.04;margin:.35em 0 .25em;letter-spacing:-.01em}
+  .lede{font-size:clamp(18px,2.2vw,22px);color:var(--muted);max-width:56ch}
+  .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
+  .button{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--accent);border-radius:999px;
+    padding:9px 16px;font-size:14.5px;background:transparent;color:var(--accent)}
+  .button.secondary{border-color:var(--line);color:var(--muted);background:var(--panel)}
   .badges{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
   .badge{display:inline-flex;align-items:baseline;gap:7px;background:var(--panel);border:1px solid var(--line);
     border-radius:999px;padding:7px 14px;font-size:13.5px}
   .badge b{font-family:var(--mono);font-size:14px}
-  .banner{margin:22px 0 0;padding:14px 16px;border-radius:12px;border:1px solid var(--warn);
-    background:color-mix(in srgb,var(--warn) 12%,transparent);font-size:14.5px}
-  section{padding:52px 0;border-bottom:1px solid var(--line)}
-  h2{font-family:var(--serif);font-size:clamp(24px,3.4vw,32px);margin:0 0 .2em;letter-spacing:-.01em}
+
+  section{padding:54px 0;border-bottom:1px solid var(--line)}
+  h2{font-family:var(--serif);font-size:clamp(25px,3.4vw,34px);margin:0 0 .25em;letter-spacing:-.01em}
   h2 .num{font-family:var(--mono);font-size:14px;color:var(--accent);margin-right:12px;vertical-align:middle}
-  h3{font-size:18px;margin:30px 0 8px}
+  h3{font-size:18px;margin:32px 0 8px}
   p{margin:.7em 0}
+  ul{padding-left:21px}
+  li{margin:.35em 0}
   .sub{color:var(--muted)}
+  .muted-note{font-size:13.5px;color:var(--muted)}
+  .tight{margin-top:8px}
+  .split{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(280px,.9fr);gap:22px;align-items:start}
+  @media(max-width:860px){.split{grid-template-columns:1fr}}
+
   .grid{display:grid;gap:14px}
   .cards{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-top:18px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
-  .card .k{font-family:var(--mono);font-size:30px;font-weight:600;line-height:1}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:17px}
+  .card .k{font-family:var(--mono);font-size:28px;font-weight:650;line-height:1}
   .card .l{font-size:13px;color:var(--muted);margin-top:8px}
   .card .l b{color:var(--ink)}
-  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14.5px}
+  .callout{margin:20px 0 0;padding:15px 17px;border-radius:var(--radius);border:1px solid var(--accent);
+    background:var(--accent-soft);font-size:15px}
+  .callout.warn{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent)}
+  .callout.bad{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 10%,transparent)}
+  .callout.good{border-color:var(--good);background:color-mix(in srgb,var(--good) 10%,transparent)}
+
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14.2px}
   th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  th{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:650}
   td.num,th.num{text-align:right;font-family:var(--mono)}
+  code,pre{font-family:var(--mono);font-size:13.5px}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;overflow:auto}
+  pre.formula{font-size:13px;line-height:1.5;background:var(--panel-2)}
+  .dim{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .dim:last-child{border-bottom:0}
+  .dim .key{font-family:var(--mono);font-weight:700;color:var(--accent);min-width:22px}
+  .figure{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .caption{font-size:13.2px;color:var(--muted);margin-top:10px}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:8px}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:middle}
   .pill{font-family:var(--mono);font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line)}
   .pill.sig{color:var(--good);border-color:color-mix(in srgb,var(--good) 50%,var(--line));background:color-mix(in srgb,var(--good) 10%,transparent)}
   .pill.ns{color:var(--muted)}
   .pill.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 50%,var(--line));background:color-mix(in srgb,var(--bad) 10%,transparent)}
-  code,pre{font-family:var(--mono);font-size:13.5px}
-  pre{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;overflow:auto}
-  .dim{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
-  .dim:last-child{border-bottom:0}
-  .dim .key{font-family:var(--mono);font-weight:700;color:var(--accent);min-width:22px}
-  .chart{margin-top:8px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
-  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:8px}
-  .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:middle}
+  .heat{--v:.5;background:color-mix(in srgb,var(--accent) calc(var(--v)*78%),transparent);border-radius:6px;color:var(--ink)}
+  .heat.pos{--v:.25;background:color-mix(in srgb,var(--good) calc(var(--v)*78%),transparent)}
+  .heat.neg{--v:.25;background:color-mix(in srgb,var(--bad) calc(var(--v)*78%),transparent)}
+  .barrow{display:grid;grid-template-columns:minmax(150px,240px) 1fr 72px;gap:12px;align-items:center;margin:9px 0;font-size:14px}
+  .bartrack{height:13px;background:var(--panel-2);border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .barfill{height:100%;background:var(--accent);border-radius:999px;width:0}
+  .source-list{font-size:14px;color:var(--muted)}
+  .source-list li{margin:.45em 0}
   footer{padding:40px 0 70px;color:var(--muted);font-size:13.5px}
   .prov{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:14px}
   .prov div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
   .prov span{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
   .prov b{font-family:var(--mono);font-weight:600;color:var(--ink);font-size:13.5px;word-break:break-all}
-  .muted-note{font-size:13.5px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -83,139 +110,204 @@
   <span class="brand">ADFE</span>
   <nav>
     <a href="#problem">Problem</a>
-    <a href="#approach">Approach</a>
+    <a href="#approach">Method</a>
     <a href="#data">Data</a>
     <a href="#judge">Judge</a>
-    <a href="#findings">Findings</a>
+    <a href="#findings">Results</a>
     <a href="#frontier">Frontier</a>
+    <a href="#implications">Implications</a>
     <a href="#reproduce">Reproduce</a>
   </nav>
 </div></header>
 
 <div class="hero"><div class="wrap">
   <div class="eyebrow">Agency-Dependent Fairness Evaluation</div>
-  <h1>Does an AI's political fairness depend on the role it&nbsp;plays?</h1>
-  <p class="lede">A role-counterfactual audit: hold the topic and task constant, vary the assigned civic role, and test whether fairness behavior moves the way theory predicts.</p>
-  <p style="margin-top:18px"><a href="adfe_report.pdf" style="display:inline-flex;align-items:center;gap:8px;border:1px solid var(--accent);border-radius:999px;padding:9px 18px;font-size:14.5px">Read the full report (PDF) &rarr;</a></p>
+  <h1>Political fairness changes when an AI is assigned a civic role.</h1>
+  <p class="lede">ADFE is a role-counterfactual audit: hold the policy task fixed, vary the system's assigned role, and measure whether user fidelity, factuality, viewpoint symmetry, curation, deliberation, and refusal integrity move in the expected directions.</p>
+  <div class="actions">
+    <a class="button" href="adfe_report.pdf">Read the PDF report</a>
+    <a class="button secondary" href="https://github.com/vik1000-coder/A_Theory_of_Agency">Source and artifacts</a>
+    <a class="button secondary" href="#implications">Deployment implications</a>
+  </div>
   <div class="badges" id="hero-badges"></div>
-  <div class="banner" id="contam-banner" style="display:none"></div>
+  <div class="callout warn" id="contam-banner" style="display:none"></div>
 </div></div>
 
 <section id="problem"><div class="wrap">
-  <h2><span class="num">01</span>The problem</h2>
-  <p>People increasingly get political information from AI systems. But "is the model biased?" is the wrong question. The same answer can be appropriate from a <em>personal assistant</em> and inappropriate from a <em>civic news provider</em> — fairness obligations depend on the <strong>role</strong> the system has been asked to play.</p>
-  <p>ADFE makes that idea testable. Roles are treatments. Each output is scored on a six-part fairness signature. The central, falsifiable claim is an <strong>agency gradient</strong>: as a role grants more discretion over framing and salience, curation accountability and source discipline should <em>rise</em>, while the floors for factuality and non-manipulation should stay <em>flat</em>.</p>
-  <h3>The six fairness dimensions</h3>
+  <h2><span class="num">01</span>The Problem</h2>
+  <div class="split">
+    <div>
+      <p>Most political-fairness audits ask whether a model is "biased." That is too flat. A personal assistant, campaign aide, research librarian, government information service, mediator, and civic news provider do not have identical fairness obligations, even when they answer the same lawful political prompt.</p>
+      <p>ADFE treats the assigned role as the experimental treatment. The question is not whether one universal fairness score goes up or down. The question is whether the model's behavior respects the obligations implied by the role it is asked to play.</p>
+    </div>
+    <div class="callout">
+      <strong>Core idea.</strong> Role prompts are not decorative copy. In deployed ML systems they are policy controls: they define intended use, user expectations, escalation thresholds, refusal posture, and audit obligations.
+    </div>
+  </div>
+  <h3>The six measured dimensions</h3>
   <div id="dimensions"></div>
 </div></section>
 
 <section id="approach"><div class="wrap">
-  <h2><span class="num">02</span>The approach</h2>
-  <p>For each prompt we vary only the assigned role and re-score the output. Roles are ordered by an <em>agency level</em> — how much framing discretion the role implies. The gradient hypothesis is a test of that continuous variable across roles.</p>
+  <h2><span class="num">02</span>Method</h2>
+  <p>For each policy prompt, the harness holds topic, source packet, audience, risk, and task constant while varying the assigned civic role. Each answer is judged on six normalized dimensions from 0 to 1.</p>
   <h3>Roles, ordered by agency level</h3>
   <table id="roles-table"><thead><tr><th>Role</th><th class="num">Agency level</th></tr></thead><tbody></tbody></table>
-  <h3>Methodology guardrails</h3>
-  <p class="sub">The harness was hardened after an audit found the original pipeline could manufacture its own effect. The current invariants:</p>
+
+  <h3>LaTeX specification</h3>
+  <p class="sub">The primary test is deliberately plain: a mixed-effects slope on the continuous role-agency level, with a random intercept for model family. The role-band predictions are kept separate as falsifiable checks, not baked into the headline outcome.</p>
+  <pre class="formula">\[
+y_{i,d} = \beta_{0,d} + \beta_{1,d}\alpha_{r(i)} + b_{m(i),d} + \epsilon_{i,d},
+\qquad b_{m,d}\sim\mathcal{N}(0,\sigma^2_{m,d})
+\]
+
+\[
+\Delta_{\text{refusal}}(p,\bar p,m,r)
+  = |\mathbb{1}[\text{refuse}(p,m,r)]-\mathbb{1}[\text{refuse}(\bar p,m,r)]|
+\]
+
+\[
+\Delta_{\text{quality}}(p,\bar p,m,r)
+  = \frac{1}{4}\sum_{d\in\{U,E,V,M\}} |y_{p,d}-y_{\bar p,d}|
+\]</pre>
+
+  <h3>Guardrails after the audit</h3>
   <ul>
-    <li><strong>Held-out judge.</strong> The LLM judge is never in the audited set, so it cannot score itself or a same-family model.</li>
-    <li><strong>Frozen by default.</strong> No prompt auto-tuning; the calibration loop is opt-in and any run that uses it is flagged <code>contaminated</code>.</li>
-    <li><strong>Blinded role inference.</strong> Role is inferred in a separate judge pass with the assigned role hidden — not circular.</li>
-    <li><strong>Non-circular outcome.</strong> The headline is a mixed-effects gradient on raw scores; hand-written role bands are reported as falsifiable predictions, not baked into the metric.</li>
-    <li><strong>Validated judge.</strong> The judge is checked against human labels before its scores are trusted (see below).</li>
-    <li><strong>Analogous pairs.</strong> Viewpoint pairs are audited to match on everything except viewpoint.</li>
+    <li><strong>Held-out judge.</strong> The judge is not in the audited model set.</li>
+    <li><strong>Frozen by default.</strong> A run resumes from its frozen config and records config/design hashes.</li>
+    <li><strong>Fail-closed artifacts.</strong> Duplicate rows, errored generations, orphan scores, and incomplete full-factorial runs fail `audit-run`.</li>
+    <li><strong>Retryable failures.</strong> Generation failures go only to `generation_errors.jsonl`; missing successful rows are retried on resume.</li>
+    <li><strong>Judge JSON retry.</strong> Malformed judge JSON gets configured retry attempts before fallback, with attempts recorded in score checks.</li>
+    <li><strong>Blinded role inference.</strong> The assigned role is hidden in a separate role-inference pass.</li>
   </ul>
 </div></section>
 
 <section id="data"><div class="wrap">
-  <h2><span class="num">03</span>The data</h2>
+  <h2><span class="num">03</span>Data And Artifacts</h2>
   <div class="grid cards" id="data-cards"></div>
   <h3>Topics</h3>
   <p id="topics" class="sub"></p>
   <h3>Audited population</h3>
   <p id="audited" class="sub"></p>
-  <p class="muted-note">Population scope: small local (Ollama) models only. Claims here say nothing about frontier systems — those are audited later via an API backend.</p>
+  <div class="callout good">
+    <strong>Current artifact integrity:</strong> the clean local run has 2,100 successful generations and 2,100 scores; the Grok frontier run has 630 and 630. Both pass full-factorial `audit-run --expect-full`.
+  </div>
 </div></section>
 
 <section id="judge"><div class="wrap">
-  <h2><span class="num">04</span>Judge validation <span class="sub" style="font-size:15px">— the gate</span></h2>
-  <p>Every number downstream depends on the LLM judge. Before trusting it, we validate it against human-labeled datasets — no hand-rating required: <a href="https://github.com/paul-rottger/xstest">XSTest</a> for refusal/safety (the M dimension) and <a href="https://github.com/sylinrl/TruthfulQA">TruthfulQA</a> for factuality (the E dimension). The cards below are the safety gate; the factuality result follows.</p>
+  <h2><span class="num">04</span>Judge Validation</h2>
+  <p>Every downstream number depends on the LLM judge, so the judge is validated against human-labeled public datasets before the study is interpreted. The result is dimension-specific: strong on refusal/safety, moderate on factuality, and weak on viewpoint bias.</p>
   <div class="grid cards" id="judge-cards"></div>
-  <p id="judge-verdict" class="sub" style="margin-top:18px"></p>
+  <p id="judge-verdict" class="sub tight"></p>
   <p id="judge-factuality" class="sub"></p>
   <p id="judge-neutrality" class="sub"></p>
-  <h3>Known blind spots (weakest categories)</h3>
+  <h3>Weakest safety categories</h3>
   <table id="judge-weak"><thead><tr><th>XSTest category</th><th class="num">Accuracy</th><th class="num">n</th></tr></thead><tbody></tbody></table>
 </div></section>
 
 <section id="findings"><div class="wrap">
-  <h2><span class="num">05</span>Analysis &amp; findings</h2>
-
-  <div class="banner" style="border-color:var(--accent);background:var(--accent-soft)">
-    <strong>Headline:</strong> on small local models, with a frozen, held-out, human-validated
-    judge, the <strong>agency gradient is not supported</strong>. The predicted rise in curation
-    accountability with agency is absent (C: p≈0.50); only deliberative standing shows a marginal
-    slope (p≈0.04) that does not survive correction for testing six dimensions, and most
-    role-interval predictions are violated. This is a clean falsification on this population —
-    the models are likely too weak to express role-conditioned curation. The one robust signal is
-    viewpoint-asymmetric <strong>refusal</strong> in specific models (notably llama3.2:3b, which
-    answers one side of a lawful pair and refuses the mirror) — a safety-tuning artifact that does
-    not vary with role, so it is not an agency effect.
+  <h2><span class="num">05</span>Empirical Results</h2>
+  <div class="callout" id="headline-result">
+    <strong>Headline:</strong> the repaired clean run detects a positive role-agency slope across all six dimensions. That supports role sensitivity, but it is not a simple victory lap for the theory: invariant floors (E and M) also rise with agency, which suggests a broad role-elaboration or output-quality effect alongside the predicted rise in curation and deliberative dimensions.
   </div>
+  <div class="grid cards" id="results-cards"></div>
 
-  <h3>Primary test — the agency gradient</h3>
+  <h3>Figure 1. Primary agency-gradient test</h3>
   <p class="sub" id="gradient-formula"></p>
-  <p>Each bar is the estimated change in a dimension's score per unit of agency level, with a 95% confidence interval. A genuine gradient shows positive, significant slopes on curation/discretion dimensions while the floors (E, M) stay near zero.</p>
-  <div class="chart"><div id="gradient-chart"></div>
+  <div class="figure"><div id="gradient-chart"></div>
     <div class="legend">
-      <span><i style="background:var(--accent)"></i>significant (p&lt;0.05)</span>
-      <span><i style="background:var(--muted)"></i>not significant</span>
+      <span><i style="background:var(--good)"></i>significant positive slope</span>
+      <span><i style="background:var(--muted)"></i>not significant / unavailable</span>
     </div>
+    <div class="caption" id="gradient-caption"></div>
   </div>
   <table id="gradient-table"><thead><tr><th>Dim</th><th class="num">Slope</th><th class="num">95% CI</th><th class="num">p</th><th>Verdict</th></tr></thead><tbody></tbody></table>
+
+  <h3>Figure 2. Mean scores by role</h3>
+  <p class="sub">Role-level means show where the aggregate slope comes from. Darker cells are higher normalized judge scores.</p>
+  <div class="figure" id="role-heatmap"></div>
+
+  <h3>Figure 3. Model heterogeneity</h3>
+  <p class="sub">The mixed-effects slope hides real variation: some small local models move strongly with agency, while others are flat or negative. This is why ADFE reports model-level slopes rather than only an average.</p>
+  <div class="figure" id="model-slope-heatmap"></div>
 
   <h3>Role-interval predictions</h3>
   <p id="interval-summary" class="sub"></p>
 
-  <h3>Refusal asymmetry by model</h3>
-  <p>The clearest reproducible signal: some models answer one side of a lawful viewpoint pair and refuse the mirror image. Reported per model; the refusal-parity gap is the rate of one-sided refusals across analogous pairs.</p>
+  <h3>Figure 4. Refusal asymmetry by model</h3>
+  <p class="sub">The most operationally concrete small-model issue is viewpoint-asymmetric refusal: one side of a lawful pair is answered while its mirror is refused.</p>
+  <div class="figure" id="refusal-bars"></div>
   <table id="refusal-table"><thead><tr><th>Model</th><th class="num">Refusal rate</th><th class="num">Refusal-parity gap</th><th class="num">Viewpoint quality gap</th></tr></thead><tbody></tbody></table>
+
   <h3>Largest paired gaps</h3>
-  <table id="pairs-table"><thead><tr><th>Pair</th><th>Model · role</th><th class="num">Refusal gap</th><th class="num">Quality gap</th></tr></thead><tbody></tbody></table>
+  <table id="pairs-table"><thead><tr><th>Pair</th><th>Model · role · mode</th><th class="num">Refusal gap</th><th class="num">Quality gap</th></tr></thead><tbody></tbody></table>
 </div></section>
 
 <section id="frontier"><div class="wrap">
-  <h2><span class="num">06</span>Frontier models (Grok)</h2>
-  <div class="banner" style="border-color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent)">
-    <strong>Main finding here is methodological:</strong> auditing a frontier model with a small
-    local judge <strong>does not work</strong> — the <code>qwen3:8b</code> judge <strong>saturates</strong>,
-    scoring almost every Grok output a perfect 1.00 on user-fidelity, epistemic integrity,
-    curation, and non-manipulation. With no variance left, the gradient on those dimensions is
-    unmeasurable. Only deliberative standing and viewpoint symmetry retain spread, and both rise
-    with agency — but viewpoint symmetry is exactly where the judge gate is weakest (κ=0.30). So
-    these slopes are suggestive, not conclusive. Frontier audits need a frontier-grade judge.
+  <h2><span class="num">06</span>Frontier Models</h2>
+  <div class="callout warn">
+    <strong>Main frontier lesson:</strong> a small local judge can fail by saturation. On Grok outputs, the judge assigns ceiling scores on several dimensions, leaving too little variance for those slopes to be meaningful. Frontier audits need frontier-grade, separately validated judges.
   </div>
   <p id="frontier-meta" class="sub"></p>
-  <h3>Judge saturation — mean score by role (0–1)</h3>
+  <h3>Figure 5. Saturated dimensions</h3>
+  <div class="figure" id="frontier-saturation"></div>
+  <h3>Mean score by role (0-1)</h3>
   <table id="frontier-means"><thead><tr><th>Role</th><th class="num">U</th><th class="num">E</th><th class="num">V</th><th class="num">C</th><th class="num">D</th><th class="num">M</th></tr></thead><tbody></tbody></table>
-  <h3>Agency gradient (where measurable)</h3>
+  <h3>Agency gradient where measurable</h3>
   <table id="frontier-gradient"><thead><tr><th>Dim</th><th class="num">Slope</th><th class="num">p</th><th>Status</th></tr></thead><tbody></tbody></table>
-  <p class="sub">Refusal asymmetry is a small-model artifact: every Grok variant refuses 0% with a zero viewpoint refusal-parity gap — the one-sided refusal seen in llama3.2:3b does not appear in capable models.</p>
+</div></section>
+
+<section id="implications"><div class="wrap">
+  <h2><span class="num">07</span>Deployment And Legal Implications</h2>
+  <p>ADFE is not a compliance certification and this page is not legal advice. Its practical value is narrower and useful: it gives teams a repeatable way to test whether role-conditioned political behavior is stable, documented, and monitored before a system is deployed in a civic context.</p>
+
+  <div class="split">
+    <div>
+      <h3>ML deployment ramifications</h3>
+      <ul>
+        <li><strong>Treat role as configuration.</strong> A "news provider" prompt, a "campaign aide" prompt, and a "government information" prompt should be versioned, reviewed, and tested like policy-bearing deployment settings.</li>
+        <li><strong>Gate on role-counterfactuals.</strong> Release checks should include mirrored lawful viewpoints, not just aggregate refusal rates.</li>
+        <li><strong>Validate judges per construct.</strong> One judge can be strong on refusal and weak on viewpoint symmetry. Report per-dimension validation, not one global judge score.</li>
+        <li><strong>Watch for saturation.</strong> If a judge gives nearly every capable-model output a 1.0, the eval is no longer measuring the system.</li>
+        <li><strong>Fail closed on artifacts.</strong> Bad rows should block analysis and publication. Silent all-zero scores are worse than a loud failed run.</li>
+        <li><strong>Route civic roles to human review.</strong> High-impact uses need logs, monitoring, escalation paths, and documented intended use.</li>
+      </ul>
+    </div>
+    <div class="callout">
+      <strong>Operational rule of thumb.</strong> If changing a system prompt changes who the product is acting for, it can also change the system's fairness obligations. Evaluate that shift explicitly.
+    </div>
+  </div>
+
+  <h3>Legal and governance context</h3>
+  <p>Several current governance regimes already treat AI risk as context-dependent. That does not make ADFE a legal test, but it makes role-counterfactual evidence relevant to documentation, monitoring, and risk assessment.</p>
+  <ul class="source-list">
+    <li><a href="https://www.nist.gov/itl/ai-risk-management-framework">NIST AI Risk Management Framework</a> and the <a href="https://airc.nist.gov/airmf-resources/airmf/">AI RMF Core</a> organize AI governance around Govern, Map, Measure, and Manage. ADFE fits most directly into Measure/Manage for role-specific political behavior.</li>
+    <li>The European Commission describes the <a href="https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai">EU AI Act</a> as risk-based rules for AI developers and deployers. Its <a href="https://digital-strategy.ec.europa.eu/en/policies/guidelines-ai-high-risk-systems">high-risk classification guidance</a> underscores that intended purpose and deployment context matter.</li>
+    <li>U.S. agencies have emphasized that automated systems remain subject to existing civil-rights, consumer-protection, competition, credit, and employment laws; see the FTC-hosted <a href="https://www.ftc.gov/legal-library/browse/cases-proceedings/public-statements/joint-statement-enforcement-efforts-against-discrimination-bias-automated-systems">joint statement on automated systems</a>.</li>
+    <li>The <a href="https://www.eeoc.gov/eeoc-disability-related-resources/artificial-intelligence-and-ada">EEOC AI resources</a> highlight employment and disability-discrimination issues when software, algorithms, or AI are used to assess applicants and workers.</li>
+    <li>The <a href="https://www.consumerfinance.gov/compliance/circulars/circular-2022-03-adverse-action-notification-requirements-in-connection-with-credit-decisions-based-on-complex-algorithms/">CFPB circular on complex algorithms</a> says creditors using AI/ML in credit decisions must still give specific principal reasons for adverse action.</li>
+    <li>The FTC's <a href="https://www.ftc.gov/industry/technology/artificial-intelligence">AI guidance and enforcement page</a> frames deceptive claims, unfair practices, and discriminatory outcomes as live consumer-protection concerns.</li>
+  </ul>
 </div></section>
 
 <section id="reproduce"><div class="wrap">
-  <h2><span class="num">07</span>Reproduce</h2>
+  <h2><span class="num">08</span>Reproduce</h2>
   <pre id="reproduce-block">git clone https://github.com/vik1000-coder/A_Theory_of_Agency
 cd A_Theory_of_Agency
 uv sync --extra dev
 
-# validate the judge against human labels (the gate)
-mkdir -p data/validation
-curl -sSL -o data/validation/xstest_prompts.csv \
-  https://raw.githubusercontent.com/paul-rottger/xstest/main/xstest_prompts.csv
-uv run python -m adfe_runner validate-judge --judge qwen3:8b
+# run integrity gates on the repaired artifacts
+uv run python -m adfe_runner audit-run --config configs/clean_local.yml \
+  --run-id adfe_clean_local_main --expect-full
+uv run python -m adfe_runner audit-run --config configs/frontier_xai.yml \
+  --run-id adfe_frontier_grok --expect-full
 
-# run a clean study (frozen, held-out judge, small local models)
-uv run python -m adfe_runner iterate --config configs/clean_local.yml --batch-size all</pre>
+# run a clean frozen study
+uv run python -m adfe_runner iterate --config configs/clean_local.yml \
+  --cycles 1 --batch-size all --run-id adfe_clean_local_main
+
+# rebuild this site, pinned to the run
+uv run python -m adfe_runner build-site --run-id adfe_clean_local_main</pre>
 </div></section>
 
 <footer><div class="wrap">
@@ -228,148 +320,196 @@ uv run python -m adfe_runner iterate --config configs/clean_local.yml --batch-si
 <script>
 (function(){
   var D = window.ADFE_DATA || {};
+  var dims = ["U","E","V","C","D","M"];
   var $ = function(id){return document.getElementById(id);};
-  var fx = function(v,d){ return (v===null||v===undefined||v==="") ? (d||"—") : v; };
-  var pct = function(v){ return (v===null||v===undefined)?"—":(Math.round(v*1000)/10)+"%"; };
+  var fx = function(v,d){ return (v===null||v===undefined||v==="") ? (d||"-") : v; };
+  var pct = function(v){ return (v===null||v===undefined)?"-":(Math.round(v*1000)/10)+"%"; };
+  var num = function(v,d){ return (v===null||v===undefined||Number.isNaN(Number(v))) ? (d||"-") : Number(v).toFixed(4).replace(/0+$/,'').replace(/\.$/,''); };
+  var esc = function(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];}); };
+  var roleOrder = function(){
+    return ((D.data_layer||{}).roles||[]).map(function(r){return r.id;});
+  };
 
-  // ---- hero badges ----
-  var prov = D.provenance||{}, jv = D.judge_validation||{};
+  var prov = D.provenance||{}, jv = D.judge_validation||{}, overall = D.overall||{};
+
   var badges = [];
-  if(jv.cohen_kappa!=null) badges.push(["judge κ", jv.cohen_kappa]);
+  if(jv.cohen_kappa!=null) badges.push(["judge kappa", jv.cohen_kappa]);
   if(jv.accuracy!=null) badges.push(["judge acc", pct(jv.accuracy)]);
   if(prov.n_scores!=null) badges.push(["scores", prov.n_scores]);
   if((D.data_layer||{}).n_prompts!=null) badges.push(["prompts", D.data_layer.n_prompts]);
   if(prov.audited_models) badges.push(["models", prov.audited_models.length]);
   $("hero-badges").innerHTML = badges.map(function(b){
-    return '<span class="badge">'+b[0]+' <b>'+b[1]+'</b></span>';}).join("");
+    return '<span class="badge">'+esc(b[0])+' <b>'+esc(b[1])+'</b></span>';}).join("");
 
-  // ---- contamination banner ----
   if(prov.contaminated){
     var b=$("contam-banner"); b.style.display="block";
-    b.innerHTML = "<strong>Preliminary.</strong> The findings below come from a run produced before the methodology was frozen (<code>contaminated="+prov.contaminated+"</code>). They illustrate the pipeline; a clean run will replace them. The judge-validation result above is independent and clean.";
+    b.innerHTML = "<strong>Preliminary.</strong> This run is flagged contaminated. Treat numbers as pipeline diagnostics, not publication-grade findings.";
   }
 
-  // ---- dimensions ----
-  $("dimensions").innerHTML = (D.data_layer&&D.data_layer.dimensions||[]).map(function(d){
-    return '<div class="dim"><span class="key">'+d.key+'</span><span>'+d.desc+'</span></div>';}).join("");
+  $("dimensions").innerHTML = ((D.data_layer&&D.data_layer.dimensions)||[]).map(function(d){
+    return '<div class="dim"><span class="key">'+esc(d.key)+'</span><span>'+esc(d.desc)+'</span></div>';}).join("");
 
-  // ---- roles ----
   var rt = document.querySelector("#roles-table tbody");
-  if(rt) rt.innerHTML = (D.data_layer&&D.data_layer.roles||[]).map(function(r){
-    return '<tr><td>'+r.label+' <span class="sub">('+r.id+')</span></td><td class="num">'+r.agency_level+'</td></tr>';}).join("");
+  if(rt) rt.innerHTML = ((D.data_layer&&D.data_layer.roles)||[]).map(function(r){
+    return '<tr><td>'+esc(r.label)+' <span class="sub">('+esc(r.id)+')</span></td><td class="num">'+esc(r.agency_level)+'</td></tr>';}).join("");
 
-  // ---- data cards ----
   var dl = D.data_layer||{};
   var dcards=[["Prompts",fx(dl.n_prompts)],["Viewpoint pairs",fx(dl.n_pairs)],
-    ["Topics",dl.topics?Object.keys(dl.topics).length:"—"],["Roles",dl.roles?dl.roles.length:"—"],
-    ["Source packets",fx(dl.n_source_packets)],["Models audited",prov.audited_models?prov.audited_models.length:"—"]];
+    ["Topics",dl.topics?Object.keys(dl.topics).length:"-"],["Roles",dl.roles?dl.roles.length:"-"],
+    ["Source packets",fx(dl.n_source_packets)],["Models audited",prov.audited_models?prov.audited_models.length:"-"]];
   $("data-cards").innerHTML = dcards.map(function(c){
-    return '<div class="card"><div class="k">'+c[1]+'</div><div class="l">'+c[0]+'</div></div>';}).join("");
-  $("topics").textContent = dl.topics?Object.keys(dl.topics).join(" · "):"—";
+    return '<div class="card"><div class="k">'+esc(c[1])+'</div><div class="l">'+esc(c[0])+'</div></div>';}).join("");
+  $("topics").textContent = dl.topics?Object.keys(dl.topics).join(" · "):"-";
   $("audited").textContent = (prov.audited_models||[]).join(" · ")+(prov.judge_model?("   ·   judge: "+prov.judge_model):"");
 
-  // ---- judge cards ----
-  var jcards=[["Cohen's κ",fx(jv.cohen_kappa)],["Accuracy",pct(jv.accuracy)],
+  var jcards=[["Safety kappa",fx(jv.cohen_kappa)],["Safety accuracy",pct(jv.accuracy)],
     ["Safe over-flag",pct(jv.safe_overflag_rate)],["Unsafe recall",pct(jv.unsafe_recall)],["Items",fx(jv.n)]];
   $("judge-cards").innerHTML = jcards.map(function(c){
-    return '<div class="card"><div class="k">'+c[1]+'</div><div class="l">'+c[0]+'</div></div>';}).join("");
+    return '<div class="card"><div class="k">'+esc(c[1])+'</div><div class="l">'+esc(c[0])+'</div></div>';}).join("");
   if(jv.cohen_kappa!=null){
-    var ok = jv.cohen_kappa>=0.6;
-    $("judge-verdict").innerHTML = "Judge: <b>"+fx(jv.judge_model)+"</b> on "+fx(jv.dataset)+
-      ". κ="+jv.cohen_kappa+" is "+(ok?"substantial agreement — the gate passes for the lawful/benign regime this study lives in":"weak — treat downstream scores with caution")+".";
+    $("judge-verdict").innerHTML = "Safety/refusal gate: <b>"+esc(fx(jv.judge_model))+"</b> on "+esc(fx(jv.dataset))+
+      " gives kappa="+esc(jv.cohen_kappa)+" and accuracy "+esc(pct(jv.accuracy))+".";
   }
   var jf=D.judge_factuality||{};
   if(jf.cohen_kappa!=null){
-    $("judge-factuality").innerHTML="<strong>Factuality (E):</strong> on <a href=\"https://github.com/sylinrl/TruthfulQA\">TruthfulQA</a> ("+
-      fx(jf.n)+" items) the judge scores κ="+jf.cohen_kappa+", accuracy "+pct(jf.accuracy)+
-      ", catching "+pct(jf.false_answer_detection_rate)+" of false answers.";
+    $("judge-factuality").innerHTML="<strong>Factuality (E):</strong> TruthfulQA, n="+esc(fx(jf.n))+
+      ", kappa="+esc(jf.cohen_kappa)+", accuracy "+esc(pct(jf.accuracy))+
+      ", false-answer detection "+esc(pct(jf.false_answer_detection_rate))+".";
   }
   var jn=D.judge_neutrality||{};
   if(jn.cohen_kappa!=null){
-    $("judge-neutrality").innerHTML="<strong>Viewpoint symmetry (V):</strong> on <a href=\"https://github.com/Media-Bias-Group/Neural-Media-Bias-Detection-Using-Distant-Supervision-With-BABE\">BABE</a> ("+
-      fx(jn.n)+" expert-labeled sentences) the judge scores κ="+jn.cohen_kappa+", accuracy "+pct(jn.accuracy)+
-      ", detecting "+pct(jn.bias_detection_rate)+" of biased sentences.";
+    $("judge-neutrality").innerHTML="<strong>Viewpoint symmetry (V):</strong> BABE, n="+esc(fx(jn.n))+
+      ", kappa="+esc(jn.cohen_kappa)+", accuracy "+esc(pct(jn.accuracy))+
+      ", biased-sentence detection "+esc(pct(jn.bias_detection_rate))+".";
   }
   var jw=document.querySelector("#judge-weak tbody");
   if(jw) jw.innerHTML=(jv.weakest_types||[]).map(function(w){
-    return '<tr><td><code>'+w.type+'</code></td><td class="num">'+pct(w.accuracy)+'</td><td class="num">'+w.n+'</td></tr>';}).join("");
+    return '<tr><td><code>'+esc(w.type)+'</code></td><td class="num">'+esc(pct(w.accuracy))+'</td><td class="num">'+esc(w.n)+'</td></tr>';}).join("");
 
-  // ---- agency gradient ----
-  var g=D.agency_gradient||{};
-  $("gradient-formula").textContent = (g.model_formula||"score ~ agency_level + (1|model)")+
+  var g=D.agency_gradient||{}, gdims=g.by_dimension||[];
+  var sigPos = gdims.filter(function(d){return d.significant && d.coef>0;}).length;
+  var floorsRise = gdims.some(function(d){return (d.dim==="E"||d.dim==="M") && d.significant && d.coef>0;});
+  var sat = ((D.frontier||{}).saturated_dims||[]).length;
+  var resultCards = [
+    ["Positive slopes", sigPos+"/"+gdims.length],
+    ["Role predictions", fx((D.interval_tests||{}).supported,0)+" supported / "+fx((D.interval_tests||{}).violated,0)+" violated"],
+    ["Refusal rate", pct(overall.refusal_rate)],
+    ["Frontier saturated dims", sat]
+  ];
+  $("results-cards").innerHTML = resultCards.map(function(c){
+    return '<div class="card"><div class="k">'+esc(c[1])+'</div><div class="l">'+esc(c[0])+'</div></div>';}).join("");
+  if(floorsRise){
+    $("headline-result").innerHTML += " <strong>Interpretive caution:</strong> because E and M also rise with agency, the result is better read as role-conditioned answer quality than as a clean separation between discretionary dimensions and invariant floors.";
+  }
+
+  $("gradient-formula").textContent = (g.model_formula||"score ~ agency_level + (1 | model)")+
     "   ·   n="+fx(g.n)+" across "+fx(g.n_models)+" models";
-  var dims=g.by_dimension||[];
-  // SVG chart
   (function(){
-    var W=640,rowH=34,padL=42,padR=120,padT=10,H=padT*2+rowH*dims.length;
-    var lo=-0.2,hi=0.4; var x=function(v){return padL+(v-lo)/(hi-lo)*(W-padL-padR);};
+    var vals=[];
+    gdims.forEach(function(d){ if(d.ci_low!=null) vals.push(d.ci_low); if(d.ci_high!=null) vals.push(d.ci_high); if(d.coef!=null) vals.push(d.coef); });
+    var min=Math.min.apply(null, vals.concat([-0.05])), max=Math.max.apply(null, vals.concat([0.18]));
+    var pad=(max-min)*0.18 || .1; min-=pad; max+=pad;
+    var W=720,rowH=35,padL=46,padR=130,padT=12,H=padT*2+rowH*gdims.length;
+    var x=function(v){return padL+(v-min)/(max-min)*(W-padL-padR);};
     var s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" role="img" aria-label="agency gradient coefficients">';
-    // zero line
     s+='<line x1="'+x(0)+'" y1="'+padT+'" x2="'+x(0)+'" y2="'+(H-padT)+'" style="stroke:var(--line)" stroke-width="1.5"/>';
-    s+='<text x="'+x(0)+'" y="'+(H-1)+'" font-size="10" style="fill:var(--muted)" text-anchor="middle" font-family="monospace">0</text>';
-    dims.forEach(function(d,i){
+    gdims.forEach(function(d,i){
       var cy=padT+rowH*i+rowH/2;
-      var col=d.significant?'var(--accent)':'var(--muted)';
-      s+='<text x="6" y="'+(cy+4)+'" font-size="13" font-family="monospace" style="fill:var(--ink)">'+d.dim+'</text>';
+      var col=(d.significant&&d.coef>0)?'var(--good)':'var(--muted)';
+      s+='<text x="6" y="'+(cy+4)+'" font-size="13" font-family="monospace" style="fill:var(--ink)">'+esc(d.dim)+'</text>';
       if(d.coef==null){ s+='<text x="'+padL+'" y="'+(cy+4)+'" font-size="11" style="fill:var(--muted)">n/a</text>'; return; }
       if(d.ci_low!=null&&d.ci_high!=null)
-        s+='<line x1="'+x(d.ci_low)+'" y1="'+cy+'" x2="'+x(d.ci_high)+'" y2="'+cy+'" style="stroke:'+col+'" stroke-width="1.5" opacity=".55"/>';
-      s+='<rect x="'+Math.min(x(0),x(d.coef))+'" y="'+(cy-7)+'" width="'+Math.abs(x(d.coef)-x(0))+'" height="14" rx="3" style="fill:'+col+'" opacity=".85"/>';
-      var lbl='coef '+d.coef+(d.pvalue!=null?('  p='+d.pvalue):'');
-      s+='<text x="'+(W-padR+8)+'" y="'+(cy+4)+'" font-size="11.5" font-family="monospace" style="fill:var(--muted)">'+lbl+'</text>';
+        s+='<line x1="'+x(d.ci_low)+'" y1="'+cy+'" x2="'+x(d.ci_high)+'" y2="'+cy+'" style="stroke:'+col+'" stroke-width="1.5" opacity=".65"/>';
+      s+='<rect x="'+Math.min(x(0),x(d.coef))+'" y="'+(cy-7)+'" width="'+Math.abs(x(d.coef)-x(0))+'" height="14" rx="3" style="fill:'+col+'" opacity=".9"/>';
+      s+='<text x="'+(W-padR+8)+'" y="'+(cy+4)+'" font-size="11.5" font-family="monospace" style="fill:var(--muted)">coef '+esc(num(d.coef))+'  p='+esc(num(d.pvalue))+'</text>';
     });
     s+='</svg>';
     $("gradient-chart").innerHTML=s;
   })();
+  $("gradient-caption").textContent = "Positive coefficients mean scores rise as the assigned role has more discretion over framing and salience.";
   var gt=document.querySelector("#gradient-table tbody");
-  if(gt) gt.innerHTML=dims.map(function(d){
-    var v=d.coef==null?'<span class="pill ns">n/a</span>':(d.significant?'<span class="pill sig">significant</span>':'<span class="pill ns">n.s.</span>');
-    var ci=(d.ci_low!=null)?('['+d.ci_low+', '+d.ci_high+']'):'—';
-    return '<tr><td><b>'+d.dim+'</b></td><td class="num">'+fx(d.coef)+'</td><td class="num">'+ci+'</td><td class="num">'+fx(d.pvalue)+'</td><td>'+v+'</td></tr>';}).join("");
+  if(gt) gt.innerHTML=gdims.map(function(d){
+    var verdict=d.coef==null?'<span class="pill ns">n/a</span>':(d.significant?'<span class="pill sig">significant</span>':'<span class="pill ns">n.s.</span>');
+    var ci=(d.ci_low!=null)?('['+num(d.ci_low)+', '+num(d.ci_high)+']'):'-';
+    return '<tr><td><b>'+esc(d.dim)+'</b></td><td class="num">'+esc(num(d.coef))+'</td><td class="num">'+esc(ci)+'</td><td class="num">'+esc(num(d.pvalue))+'</td><td>'+verdict+'</td></tr>';}).join("");
 
-  // ---- interval tests ----
+  function heatCell(v){
+    var val = Number(v);
+    if(!Number.isFinite(val)) return '<td class="num">-</td>';
+    var opacity = Math.max(0.08, Math.min(1, val));
+    return '<td class="num heat" style="--v:'+opacity.toFixed(3)+'">'+num(val, "-")+'</td>';
+  }
+  var means=D.dimension_means_by_role||{};
+  var roles=roleOrder();
+  $("role-heatmap").innerHTML =
+    '<table><thead><tr><th>Role</th>'+dims.map(function(d){return '<th class="num">'+d+'</th>';}).join('')+'<th class="num">n</th></tr></thead><tbody>'+
+    roles.map(function(role){
+      var r=means[role]||{};
+      return '<tr><td>'+esc(role)+'</td>'+dims.map(function(d){return heatCell(r[d]);}).join('')+'<td class="num">'+esc(fx(r.n))+'</td></tr>';
+    }).join('')+'</tbody></table><div class="caption">Darker cells are higher normalized judge scores. Values are means over prompts, models, and agency modes.</div>';
+
+  function slopeCell(v){
+    var val=Number(v);
+    if(!Number.isFinite(val)) return '<td class="num">-</td>';
+    var mag=Math.min(1, Math.abs(val)/0.18);
+    var cls=val>=0?'pos':'neg';
+    return '<td class="num heat '+cls+'" style="--v:'+Math.max(.12,mag).toFixed(3)+'">'+num(val)+'</td>';
+  }
+  var slopes=D.model_slopes||[];
+  $("model-slope-heatmap").innerHTML =
+    '<table><thead><tr><th>Model</th>'+dims.map(function(d){return '<th class="num">'+d+'</th>';}).join('')+'</tr></thead><tbody>'+
+    slopes.map(function(row){
+      return '<tr><td><code>'+esc(row.model)+'</code></td>'+dims.map(function(d){return slopeCell(row[d]);}).join('')+'</tr>';
+    }).join('')+'</tbody></table><div class="caption">Green means the dimension rises with agency for that model; red means it falls. Magnitude is scaled for readability.</div>';
+
   var it=D.interval_tests||{};
-  if(Object.keys(it).length) $("interval-summary").innerHTML="Across role × dimension predictions: <b>"+fx(it.supported,0)+
-    " supported</b>, "+fx(it.violated,0)+" violated, "+fx(it.inconclusive,0)+" inconclusive.";
-  else $("interval-summary").textContent="—";
+  $("interval-summary").innerHTML="Across role x dimension predictions: <b>"+esc(fx(it.supported,0))+
+    " supported</b>, "+esc(fx(it.violated,0))+" violated, "+esc(fx(it.inconclusive,0))+" inconclusive.";
 
-  // ---- refusal by model ----
+  var refusals=D.refusal_by_model||[];
+  var maxRef=Math.max.apply(null, refusals.map(function(r){return r.refusal_rate||0;}).concat([0.01]));
+  $("refusal-bars").innerHTML=refusals.map(function(r){
+    var w=Math.round(((r.refusal_rate||0)/maxRef)*100);
+    return '<div class="barrow"><code>'+esc(r.model)+'</code><div class="bartrack"><div class="barfill" style="width:'+w+'%"></div></div><span class="num">'+esc(pct(r.refusal_rate))+'</span></div>';
+  }).join('')+'<div class="caption">Bars show total refusal rate. The table below adds paired-viewpoint asymmetry.</div>';
   var rtab=document.querySelector("#refusal-table tbody");
-  if(rtab) rtab.innerHTML=(D.refusal_by_model||[]).map(function(r){
-    return '<tr><td><code>'+r.model+'</code></td><td class="num">'+pct(r.refusal_rate)+'</td><td class="num">'+fx(r.refusal_parity_gap)+'</td><td class="num">'+fx(r.viewpoint_quality_gap)+'</td></tr>';}).join("");
+  if(rtab) rtab.innerHTML=refusals.map(function(r){
+    return '<tr><td><code>'+esc(r.model)+'</code></td><td class="num">'+esc(pct(r.refusal_rate))+'</td><td class="num">'+esc(num(r.refusal_parity_gap))+'</td><td class="num">'+esc(num(r.viewpoint_quality_gap))+'</td></tr>';}).join("");
 
-  // ---- top pairs ----
   var ptab=document.querySelector("#pairs-table tbody");
   if(ptab) ptab.innerHTML=(D.top_pair_gaps||[]).map(function(p){
-    return '<tr><td class="sub">'+fx(p.pair)+'</td><td class="sub">'+fx(p.model)+' · '+fx(p.role)+'</td><td class="num">'+fx(p.refusal_gap)+'</td><td class="num">'+fx(p.quality_gap)+'</td></tr>';}).join("");
+    return '<tr><td class="sub">'+esc(fx(p.pair))+'</td><td class="sub">'+esc(fx(p.model))+' · '+esc(fx(p.role))+' · '+esc(fx(p.agency_mode))+'</td><td class="num">'+esc(num(p.refusal_gap))+'</td><td class="num">'+esc(num(p.quality_gap))+'</td></tr>';}).join("");
 
-  // ---- frontier ----
   var fr=D.frontier||{};
   if(fr.n){
-    $("frontier-meta").innerHTML="Audited "+(fr.models||[]).map(function(m){return '<code>'+m.replace('xai:','')+'</code>';}).join(", ")+
-      " via the xAI API ("+fr.n+" scored, judge "+fx((D.provenance||{}).judge_model)+", held out). Refusal rate: "+pct(fr.refusal_rate)+".";
+    $("frontier-meta").innerHTML="Audited "+(fr.models||[]).map(function(m){return '<code>'+esc(m.replace('xai:',''))+'</code>';}).join(", ")+
+      " via the xAI API ("+esc(fr.n)+" scored, local judge "+esc(fx(prov.judge_model))+"). Refusal rate: "+esc(pct(fr.refusal_rate))+".";
+    var saturated = fr.saturated_dims || [];
+    $("frontier-saturation").innerHTML = dims.map(function(d){
+      var isSat=saturated.indexOf(d)>=0;
+      return '<span class="badge" style="margin:4px;border-color:'+(isSat?'var(--warn)':'var(--line)')+'">'+esc(d)+' <b>'+(isSat?'saturated':'measurable')+'</b></span>';
+    }).join('')+'<div class="caption">Saturated means the judge produced too little variance for a meaningful gradient estimate.</div>';
     var fmeans=document.querySelector("#frontier-means tbody");
-    if(fmeans) fmeans.innerHTML=Object.keys(fr.dimension_means_by_role||{}).map(function(role){
-      var r=fr.dimension_means_by_role[role];
-      return '<tr><td>'+role+'</td>'+['U','E','V','C','D','M'].map(function(d){return '<td class="num">'+(r[d]!=null?r[d].toFixed(2):'—')+'</td>';}).join('')+'</tr>';}).join("");
+    if(fmeans) fmeans.innerHTML=roleOrder().filter(function(role){return (fr.dimension_means_by_role||{})[role];}).map(function(role){
+      var r=fr.dimension_means_by_role[role]||{};
+      return '<tr><td>'+esc(role)+'</td>'+dims.map(function(d){return '<td class="num">'+esc(r[d]!=null?Number(r[d]).toFixed(2):'-')+'</td>';}).join('')+'</tr>';}).join("");
     var fg=document.querySelector("#frontier-gradient tbody");
     if(fg) fg.innerHTML=(fr.gradient||[]).map(function(g){
       var status, cls;
-      if(g.converged===false){status='saturated (no variance)';cls='ns';}
+      if(g.converged===false){status='saturated';cls='ns';}
       else if(g.significant){status='rises with agency';cls='sig';}
       else {status='flat';cls='ns';}
-      return '<tr><td><b>'+g.dim+'</b></td><td class="num">'+(g.coef!=null?fx(g.coef):'—')+'</td><td class="num">'+fx(g.pvalue)+'</td><td><span class="pill '+cls+'">'+status+'</span></td></tr>';}).join("");
+      return '<tr><td><b>'+esc(g.dim)+'</b></td><td class="num">'+esc(g.coef!=null?num(g.coef):'-')+'</td><td class="num">'+esc(num(g.pvalue))+'</td><td><span class="pill '+cls+'">'+esc(status)+'</span></td></tr>';}).join("");
   } else {
     var fsec=document.getElementById('frontier'); if(fsec) fsec.style.display='none';
   }
 
-  // ---- provenance ----
   var pv=[["Run id",prov.run_id],["Judge",prov.judge_model],["Frozen",String(prov.frozen)],
     ["Contaminated",String(prov.contaminated)],["Scores",prov.n_scores],["Created",prov.created_at]];
   $("provenance").innerHTML=pv.map(function(p){
-    return '<div><span>'+p[0]+'</span><b>'+fx(p[1])+'</b></div>';}).join("");
-  $("generated").innerHTML="Page data generated "+fx(D.generated_at)+". Built from run artifacts by <code>adfe_runner build-site</code>. "+
-    '<a href="https://github.com/vik1000-coder/A_Theory_of_Agency">Source code &amp; data</a>.';
+    return '<div><span>'+esc(p[0])+'</span><b>'+esc(fx(p[1]))+'</b></div>';}).join("");
+  $("generated").innerHTML="Page data generated "+esc(fx(D.generated_at))+". Built from run artifacts by <code>adfe_runner build-site --run-id "+esc(fx(prov.run_id))+"</code>. "+
+    '<a href="https://github.com/vik1000-coder/A_Theory_of_Agency">Source code and data</a>.';
 })();
 </script>
 </body>

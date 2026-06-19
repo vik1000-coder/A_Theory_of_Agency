@@ -3,6 +3,7 @@
 \usepackage[margin=1in]{geometry}
 \usepackage{booktabs}
 \usepackage{amsmath}
+\usepackage{amssymb}
 \usepackage{xcolor}
 \usepackage{enumitem}
 \usepackage{microtype}
@@ -15,7 +16,7 @@
 \newcommand{\dimcode}[1]{\texttt{#1}}
 
 \title{\textbf{Agency-Dependent Fairness Evaluation}\\[2pt]
-\large A Role-Counterfactual Audit of Political Fairness in Language Models, with a Validated Judge}
+\large A Role-Counterfactual Audit of Political Fairness in Language Models}
 \author{}
 \date{June 2026}
 
@@ -24,276 +25,228 @@
 
 \begin{abstract}
 \noindent
-We ask whether a language model's political-fairness behavior depends on the \emph{civic role} it is
-assigned. We operationalize ``Agency-Dependent Fairness'' (ADFE) as a role-counterfactual audit:
-hold the topic and task constant, vary the assigned role across an agency ladder, and score each
-output on a six-part fairness signature with an LLM judge that is first \emph{validated against
-human-labeled datasets}. After hardening the pipeline against a set of confounds that allowed an
-earlier version to manufacture its own effect---a self-judging model, a circular outcome metric, and
-a prompt-tuning loop---we run two studies. On five small local models ($n=2{,}100$ scored outputs)
-the central ``agency gradient'' hypothesis is cleanly \emph{not supported}: curation accountability
-does not rise with assigned agency. On three frontier models (xAI Grok, $n=636$) the small local
-judge \emph{saturates}, scoring nearly every output a perfect $1.0$ on four of six dimensions, so the
-gradient is largely unmeasurable; the two dimensions that retain variance (deliberative standing and
-viewpoint symmetry) do rise with agency, but viewpoint symmetry is precisely where the judge is least
-reliable ($\kappa=0.30$). The clearest reproducible behavioral phenomenon---viewpoint-asymmetric
-refusal---is a small-model artifact that vanishes in capable models. We argue the most durable
-contribution is methodological: \textbf{judge capability must match the audited population}, and we
-draw out the modeling, benchmarking, and legal questions the program raises.
+Agency-Dependent Fairness Evaluation (ADFE) asks whether a language model's political-fairness
+behavior depends on the \emph{civic role} it is assigned. The method is a role-counterfactual audit:
+hold the policy task, topic, source packet, audience, and risk level fixed; vary the assigned role
+over an agency ladder; and score outputs on a six-part fairness signature with a held-out judge that
+is separately validated against human-labeled datasets. After hardening the run pipeline against
+silent artifact failures, duplicate rows, self-judging, prompt-tuning contamination, and circular
+outcomes, the repaired clean local run contains $n=2{,}100$ scored outputs across five small local
+models. The mixed-effects primary test finds positive role-agency slopes on all six dimensions. This
+is evidence of role sensitivity, but not a simple confirmation of the original theory: invariant
+floor dimensions, factuality (\dimcode{E}) and non-manipulation (\dimcode{M}), also rise with agency,
+suggesting a broad role-elaboration or answer-quality effect alongside the predicted rise in
+curation and deliberative dimensions. The most operationally concrete small-model risk is
+viewpoint-asymmetric refusal. On the frontier Grok run ($n=630$), refusal asymmetry vanishes, but the
+small local judge saturates on several dimensions, showing that judge capability must match the
+audited population.
 \end{abstract}
 
-\section{Introduction and background}
+\section{Introduction}
 
-People increasingly receive political information from AI systems, yet the dominant evaluation
-question---``is the model biased?''---is malformed. The same answer can be appropriate from a
-\emph{personal assistant} drafting a partisan op-ed on request and inappropriate from a \emph{civic
-news provider} that is supposed to lead with balanced fact. Fairness obligations are not a property of
-the model in isolation; they are conditioned on the role the system has been asked to occupy.
+Most political-fairness audits ask whether a model is biased. That question is under-specified. A
+personal assistant drafting a lawful partisan argument, a campaign aide preparing messaging, a
+government information service explaining a procedure, and a civic news provider curating what is
+salient do not have identical obligations. Fairness depends not only on topic and viewpoint, but on
+the \emph{role} the system has been asked to occupy.
 
-This report develops and tests that intuition. We treat \emph{roles as experimental treatments} and
-ask whether model behavior moves, across roles, along predicted fairness dimensions. The framing is
-deliberately falsifiable: if outputs do not differentiate by role, the theory has a clean failure
-path; if they shift in the predicted directions while holding invariant floors, the theory has an
-empirical core.
+ADFE makes that claim testable. Roles are experimental treatments. Each output is scored on a
+six-dimensional fairness signature, and the primary outcome is a regression of each dimension on a
+continuous role-agency level. The theory predicts that dimensions tied to editorial discretion and
+public-facing curation should rise with agency, while invariant floors such as factuality and
+non-manipulation should stay high regardless of role.
 
-\paragraph{Relation to prior work.} Industry and academic efforts have measured political
-even-handedness with paired prompts and slant-controlled question sets (e.g.\ OpenAI's political-bias
-work; Anthropic's paired-prompt even-handedness evaluation; PARETO-style balanced-approval studies;
-news-intermediary and multiple-choice political benchmarks). These measure \emph{ideological slant or
-parity}. ADFE differs by making \emph{role/agency} the manipulated variable and by separating six
-distinct fairness obligations rather than collapsing fairness to a single balance score.
-
-\section{The agency-dependent fairness model}
+\section{Model and measurements}
 
 \subsection{Six fairness dimensions}
-Each output is scored $0$--$4$ (normalized to $[0,1]$) on:
+
+Each output is judged on raw $0$--$4$ scores, normalized to $[0,1]$:
 \begin{itemize}
-  \item \dimcode{U} --- User-agency fidelity: performs the assigned lawful task without hidden role substitution.
-  \item \dimcode{E} --- Epistemic integrity: accurate, calibrated, grounded in supplied sources; no hallucinated authority.
-  \item \dimcode{V} --- Viewpoint symmetry: analogous lawful viewpoints receive comparable effort, depth, evidence, and refusal treatment.
-  \item \dimcode{C} --- Curation accountability: salience is justified; fact, analysis, and uncertainty are separated.
-  \item \dimcode{D} --- Deliberative standing: disagreement, minority views, and procedural fairness are preserved.
-  \item \dimcode{M} --- Non-manipulation / refusal integrity: refuses deception or unlawful manipulation on viewpoint-neutral grounds.
+  \item \dimcode{U}: User-agency fidelity.
+  \item \dimcode{E}: Epistemic integrity and source-grounded factuality.
+  \item \dimcode{V}: Viewpoint symmetry across analogous lawful viewpoints.
+  \item \dimcode{C}: Curation accountability: salience, sourcing, and uncertainty separation.
+  \item \dimcode{D}: Deliberative standing for disagreement and minority views.
+  \item \dimcode{M}: Non-manipulation and viewpoint-neutral refusal integrity.
 \end{itemize}
 
 \subsection{Roles as an agency ladder}
-Seven roles are ordered by an \emph{agency level} $\alpha\in[0,1]$---the discretion the role implies
-over framing and salience: assistant and advocate ($\alpha=0.20$), campaign aide ($0.35$), researcher
-($0.45$), government information service ($0.50$), mediator ($0.60$), and civic news provider
-($0.75$).
 
-\subsection{The agency-gradient hypothesis}
-The central, novel claim is a \emph{gradient}: as $\alpha$ rises, dimensions tied to editorial
-discretion---curation accountability (\dimcode{C}), deliberative standing (\dimcode{D}), viewpoint
-symmetry (\dimcode{V})---should rise, while \emph{invariant floors} for epistemic integrity
-(\dimcode{E}) and non-manipulation (\dimcode{M}) remain high and flat regardless of role. Because
-$\alpha$ is a fixed property of each role, the test is a regression of each dimension on the
-\emph{continuous} treatment $\alpha$ across roles.
+Seven roles are ordered by agency level $\alpha$: assistant and advocate ($0.20$), campaign aide
+($0.35$), researcher ($0.45$), government information service ($0.50$), mediator ($0.60$), and civic
+news provider ($0.75$).
 
-\section{Methodology}
+\subsection{Primary test}
 
-\subsection{Role-counterfactual generation}
-For each base prompt and role we build a generation prompt that supplies the role card, a dated
-source packet, and the user task, and instruct the model to return only the user-facing answer. The
-prompt bank spans six high-salience U.S.\ policy topics (immigration, policing, climate, abortion,
-taxation, voting) with structurally analogous viewpoint pairs (e.g.\ access vs.\ restriction) that we
-audit to match on topic, task, risk, audience, and source packet---differing only in viewpoint.
+For each dimension $d$, the primary model is:
+\[
+y_{i,d} = \beta_{0,d} + \beta_{1,d}\alpha_{r(i)} + b_{m(i),d} + \epsilon_{i,d},
+\qquad b_{m,d}\sim\mathcal{N}(0,\sigma^2_{m,d}).
+\]
+Here $\alpha_{r(i)}$ is the agency level of the assigned role, and $b_{m(i),d}$ is a random
+intercept for the audited model. Paired viewpoint gaps are computed as:
+\[
+\Delta_{\text{refusal}}(p,\bar p,m,r)
+  = |\mathbb{1}[\text{refuse}(p,m,r)]-\mathbb{1}[\text{refuse}(\bar p,m,r)]|,
+\]
+\[
+\Delta_{\text{quality}}(p,\bar p,m,r)
+  = \frac{1}{4}\sum_{d\in\{U,E,V,M\}} |y_{p,d}-y_{\bar p,d}|.
+\]
 
-\subsection{The judge, and its confounds}
-Outputs are scored by an LLM judge. An initial version of the harness contained three confounds that
-could manufacture the predicted effect, all of which we removed:
-\begin{enumerate}
-  \item \textbf{Self-judging.} The judge was a member of the audited set. We hold the judge
-  (\dimcode{qwen3:8b}) out of the audited population entirely.
-  \item \textbf{A prompt-tuning loop.} An ``iterate'' mode auto-tuned both the generation and judge
-  prompts to maximize the role-fit metric across cycles. We froze runs by default; the loop is now
-  opt-in and any run that uses it is flagged \texttt{contaminated}.
-  \item \textbf{A circular outcome.} The headline metric was distance from researcher-chosen ``expected''
-  score bands---i.e.\ proximity to the answer we hoped to see, with the judge told the role in advance.
-  We replaced it with (i) raw dimension means, (ii) a mixed-effects test of the gradient, and (iii) the
-  expected bands reframed as falsifiable predictions. Role \emph{inference} is now a separate, blinded
-  judge pass with the assigned role hidden.
-\end{enumerate}
-A live demonstration of judge fragility motivated this: a single primed value in the judge's JSON
-template made the judge echo it for every item ($\kappa=0.0$); removing it restored $\kappa\approx0.78$.
-A judge whose verdicts swing that far on scaffolding cannot also be auto-tuned in a loop.
+\section{Run integrity and methodology hardening}
 
-\subsection{Validating the judge against human labels}
-We validate the judge---with no hand-labeling---against three human-labeled public datasets, one per
-dimension it most affects, using a reason-first, de-primed prompt and per-item resumable checkpoints:
+The pipeline was hardened before the current results were published:
 \begin{itemize}
-  \item \dimcode{M} (refusal/safety) against \textbf{XSTest} (250 safe + 200 unsafe prompts, expert-labeled);
-  \item \dimcode{E} (factuality) against \textbf{TruthfulQA} (best vs.\ best-incorrect answers, human truth labels);
-  \item \dimcode{V} (viewpoint) against \textbf{BABE} (expert sentence-level media-bias labels).
+  \item Generation failures are written only to \texttt{generation\_errors.jsonl}; failed generations are
+  retryable and are not silently scored as zero.
+  \item \texttt{audit-run} fails runs with duplicate item IDs, errored generation rows, orphan scores,
+  incomplete full-factorial artifacts, contaminated publication runs, or missing frozen configs.
+  \item \texttt{repair-run} backs up artifacts, drops bad generation/score rows, deduplicates by
+  \texttt{item\_id}, and rewrites analysis.
+  \item Frozen runs resume from \texttt{frozen\_config.yml}; config/design hashes prevent accidental
+  axis drift.
+  \item The judge is held out from the audited model set and validated per construct.
 \end{itemize}
-
-\subsection{Inference}
-The gradient is estimated with a linear mixed model, $\textrm{score}_{d}\sim \alpha + (1\mid\textrm{model})$,
-a random intercept per model so the slope on $\alpha$ is estimated while accounting for
-model-to-model differences. Paired-viewpoint metrics (refusal-parity gap, viewpoint quality gap) are
-computed per analogous pair.
 
 \section{Experimental setup}
-The data layer comprises 30 base prompts across 6 topics (with 6 audited viewpoint pairs), 7 role
-cards, and 6 dated source packets. Two populations are audited, both with the held-out, validated
-\dimcode{qwen3:8b} judge:
-\begin{itemize}
-  \item \textbf{Small local models} (Ollama): \dimcode{llama3.2:3b}, \dimcode{llama3.2:1b},
-  \dimcode{phi3:mini}, \dimcode{gemma3:1b}, \dimcode{deepseek-r1:1.5b}; explicit and implicit agency
-  modes; $n=2{,}100$ scored outputs.
-  \item \textbf{Frontier models} (xAI API): \dimcode{grok-4.3}, \dimcode{grok-4.20-reasoning},
-  \dimcode{grok-4.20-non-reasoning}; explicit mode; $n=636$ scored outputs.
-\end{itemize}
 
-\section{Results}
+The clean local run uses 30 prompts, 6 analogous viewpoint pairs, 6 topics, 7 role cards, 2 agency
+modes, and 5 small local models: \dimcode{llama3.2:3b}, \dimcode{llama3.2:1b}, \dimcode{phi3:mini},
+\dimcode{gemma3:1b}, and \dimcode{deepseek-r1:1.5b}. It contains $2{,}100$ successful generations
+and $2{,}100$ scores.
 
-\subsection{Judge validation}
+The secondary frontier run uses three xAI Grok variants and contains $630$ successful generations and
+$630$ scores. Both runs pass \texttt{audit-run --expect-full}.
+
+\section{Judge validation}
+
 \begin{table}[h]\centering
 \begin{tabular}{llrrl}
 \toprule
-Dimension & Dataset & $\kappa$ & Accuracy & Verdict \\
+Dimension & Dataset & $\kappa$ & Accuracy & Interpretation \\
 \midrule
-\dimcode{M} safety & XSTest ($n{=}450$) & $0.78$ & $0.89$ & trustworthy \\
-\dimcode{E} factuality & TruthfulQA ($n{=}1{,}580$) & $0.50$ & $0.75$ & moderate; misses $\sim$20\% of falsehoods \\
-\dimcode{V} viewpoint & BABE ($n{=}907$) & $0.30$ & $0.64$ & weak; over-flags bias (specificity $0.35$) \\
+\dimcode{M} safety/refusal & XSTest ($n=450$) & $0.7753$ & $0.8911$ & strong enough for refusal analysis \\
+\dimcode{E} factuality & TruthfulQA ($n=1{,}580$) & $0.5000$ & $0.7500$ & moderate; use caution \\
+\dimcode{V} viewpoint & BABE ($n=907$) & $0.2966$ & $0.6362$ & weak; conclusions are tentative \\
 \bottomrule
 \end{tabular}
-\caption{The judge is reliable on refusal/safety, moderate on factuality, and weak on viewpoint
-neutrality. Conclusions are weighted accordingly.}
+\caption{Judge validation is dimension-specific. A single global judge score would hide important
+blind spots.}
 \end{table}
 
-\subsection{Small local models: the gradient is not supported}
-\begin{table}[h]\centering
-\begin{tabular}{lrrl}
-\toprule
-Dim & Slope on $\alpha$ & $p$ & \\
-\midrule
-\dimcode{C} curation     & $+0.022$ & $0.50$ & predicted rise \emph{absent} \\
-\dimcode{V} viewpoint    & $+0.040$ & $0.20$ & n.s. \\
-\dimcode{U} user fidelity& $+0.028$ & $0.41$ & n.s. \\
-\dimcode{D} deliberative & $+0.065$ & $0.044$ & only hit; fails multiple-comparison correction \\
-\dimcode{E} epistemic    & $+0.009$ & $0.78$ & flat (floor) \\
-\dimcode{M} non-manip.   & $+0.012$ & $0.70$ & flat (floor) \\
-\bottomrule
-\end{tabular}
-\caption{Mixed-effects gradient, small local models ($n=2{,}100$, 5 models). The predicted rise in
-curation accountability is absent; the single significant slope (\dimcode{D}) does not survive
-Bonferroni correction across six dimensions. Of 42 role$\times$dimension interval predictions, 12 are
-supported, 22 violated, 8 inconclusive.}
-\end{table}
+\section{Clean local results}
 
-\noindent The clearest behavioral signal is viewpoint-asymmetric \emph{refusal}: \dimcode{llama3.2:3b}
-fully answers one side of a lawful argument pair (e.g.\ abortion access) and refuses its mirror
-(restriction), with a refusal-parity gap of $1.0$ on the most charged pairs, even though its overall
-refusal rate is low ($\approx5\%$). This is a per-model safety-tuning artifact, similar across roles,
-not an agency effect.
-
-\subsection{Frontier models: judge saturation}
-On Grok the judge returns a near-constant $1.00$ on \dimcode{U}, \dimcode{E}, \dimcode{C}, and
-\dimcode{M} for every role, leaving no variance to model on those dimensions. Only \dimcode{D} and
-\dimcode{V} retain spread, and both rise significantly with agency
-(\dimcode{D}: $+0.104$; \dimcode{V}: $+0.112$; both $p\approx0$). Refusal rate is $0\%$ across all
-three variants with a zero refusal-parity gap. Of 42 interval predictions, 26 are ``supported,'' but
-this is partly a ceiling artifact---near-maximal scores fall inside high expected bands.
+\subsection{Primary agency-gradient test}
 
 \begin{table}[h]\centering
-\begin{tabular}{lrrrrrr}
+\begin{tabular}{lrrrl}
 \toprule
-Population & \dimcode{U} & \dimcode{E} & \dimcode{V} & \dimcode{C} & \dimcode{D} & \dimcode{M} \\
+Dimension & Slope on $\alpha$ & 95\% CI & $p$ & Result \\
 \midrule
-Frontier (Grok), all roles & $1.00$ & $1.00$ & $0.89$--$0.98$ & $1.00$ & $0.90$--$1.00$ & $1.00$ \\
-Small local, role range     & --- & --- & $0.52$--$0.73$ & $0.64$--$0.84$ & $0.55$--$0.76$ & --- \\
+\dimcode{U} & $+0.0965$ & $[0.0420,\,0.1511]$ & $0.0005$ & positive \\
+\dimcode{E} & $+0.0587$ & $[0.0027,\,0.1148]$ & $0.0401$ & positive floor movement \\
+\dimcode{V} & $+0.0906$ & $[0.0365,\,0.1447]$ & $0.0010$ & positive \\
+\dimcode{C} & $+0.0769$ & $[0.0215,\,0.1324]$ & $0.0066$ & positive \\
+\dimcode{D} & $+0.1157$ & $[0.0604,\,0.1709]$ & $<0.0001$ & strongest slope \\
+\dimcode{M} & $+0.0622$ & $[0.0188,\,0.1055]$ & $0.0049$ & positive floor movement \\
 \bottomrule
 \end{tabular}
-\caption{Mean dimension scores. The frontier rows are pinned at the ceiling on four dimensions:
-the $8$B judge cannot discriminate among capable-model outputs.}
+\caption{All six dimensions rise with assigned role agency in the repaired clean run. This supports
+role sensitivity, but because the invariant floors \dimcode{E} and \dimcode{M} also rise, it is not a
+clean separation between discretionary duties and fixed floors.}
 \end{table}
 
-\subsection{The population contrast}
-Small models: a discriminating judge measures a clean \emph{null}. Frontier models: the same judge
-\emph{saturates}, so the gradient is mostly unmeasurable and the measurable part rests on the weakest
-gate. The honest reading is not ``the gradient appears in capable models'' but ``a small judge cannot
-audit capable models.''
+\subsection{Role-band predictions}
 
-\section{Ramifications}
+The pre-specified role-interval checks are mixed: 16 role$\times$dimension predictions are supported,
+17 are violated, and 9 are inconclusive. This is why the headline is not simply "the theory is
+confirmed." The data show role-conditioned movement, but the exact normative bands require revision
+or human calibration.
 
-\subsection{Modeling and measurement questions}
+\subsection{Model heterogeneity and refusal asymmetry}
+
+\begin{table}[h]\centering
+\begin{tabular}{lrrr}
+\toprule
+Model & Refusal rate & Refusal-parity gap & Viewpoint-quality gap \\
+\midrule
+\dimcode{deepseek-r1:1.5b} & $0.3286$ & $0.2738$ & $0.1775$ \\
+\dimcode{llama3.2:1b} & $0.1310$ & $0.2024$ & $0.2143$ \\
+\dimcode{llama3.2:3b} & $0.0476$ & $0.2381$ & $0.2303$ \\
+\dimcode{phi3:mini} & $0.0167$ & $0.0476$ & $0.0859$ \\
+\dimcode{gemma3:1b} & $0.0000$ & $0.0000$ & $0.0751$ \\
+\bottomrule
+\end{tabular}
+\caption{Small models differ sharply. The most concrete deployment risk is not total refusal rate
+alone, but asymmetric refusal across paired lawful viewpoints.}
+\end{table}
+
+\section{Frontier results}
+
+The Grok run has a refusal rate of $0.0$ and no viewpoint refusal-parity gap. However, the local
+\dimcode{qwen3:8b} judge saturates on several dimensions. Curation (\dimcode{C}), factuality
+(\dimcode{E}), and non-manipulation (\dimcode{M}) have insufficient variance for a meaningful
+gradient estimate. User fidelity (\dimcode{U}) is near-ceiling and not significant
+($+0.0026$, $p=0.2118$). Deliberative standing (\dimcode{D}) and viewpoint symmetry (\dimcode{V})
+rise with agency ($+0.1103$ and $+0.1180$, respectively), but the viewpoint gate is the judge's
+weakest validated construct. The honest frontier conclusion is therefore methodological: capable
+models require a capable, separately validated judge.
+
+\section{Deployment ramifications}
+
+ADFE is best understood as a deployment test pattern:
 \begin{itemize}
-  \item \textbf{Judge--population capability matching.} An evaluator must be able to discriminate
-  within the population it scores. An $8$B judge ceilings out on frontier outputs; frontier audits need
-  a frontier-grade, separately-validated judge. This is a general law for LLM-as-judge pipelines, not a
-  quirk of this study.
-  \item \textbf{Circularity and pre-registration.} Defining the outcome as proximity to a researcher's
-  expected bands, with the judge told the answer, manufactures confirmation. Outcomes should be raw
-  measurements plus pre-registered, falsifiable predictions.
-  \item \textbf{Judge prompt-sensitivity.} A single primed token moved $\kappa$ from $0$ to $0.78$. Any
-  pipeline that \emph{tunes} judge prompts toward a target is measuring its own tuning.
-  \item \textbf{Dimension-specific trust.} Validation must be per-construct: the same judge was
-  trustworthy on refusal, moderate on factuality, and weak on viewpoint neutrality.
+  \item Treat role prompts as versioned policy configuration, not incidental copy.
+  \item Include role-counterfactual and viewpoint-paired tests in release gates.
+  \item Report refusal parity across lawful mirrors, not only aggregate refusal rate.
+  \item Validate evaluators per construct and watch for saturation.
+  \item Preserve logs, frozen configs, score checks, and artifact audits.
+  \item Route high-impact civic roles to human review and escalation.
 \end{itemize}
 
-\subsection{AI-training and benchmark questions}
-\begin{itemize}
-  \item \textbf{Refusal asymmetry as an alignment side-effect.} The cleanest finding---one model
-  refusing one side of a lawful pair---is a safety-tuning artifact. Benchmarks should measure
-  \emph{refusal parity across analogous lawful viewpoints}, not just refusal rates, and RLHF/DPO
-  pipelines should be tuned against over-refusal that is viewpoint-correlated.
-  \item \textbf{Role-conditioning as a first-class axis.} Fairness benchmarks that fix a single
-  ``assistant'' role miss that obligations are role-dependent; role should be a manipulated variable.
-  \item \textbf{Held-out, human-validated judges.} Benchmarks that score with an unvalidated, in-family
-  judge inherit the judge's blind spots. Reporting per-dimension judge $\kappa$ against human labels
-  should be a publication norm.
-  \item \textbf{Saturation as a ceiling on benchmark lifespan.} When a judge saturates, a benchmark
-  stops measuring; capability-matched judges and harder items are required to keep a benchmark live.
-\end{itemize}
+\section{Legal and governance context}
 
-\subsection{Legal and governance questions}
-\begin{itemize}
-  \item \textbf{Editorial discretion and the First Amendment.} If a model's curation behavior is
-  role-conditioned, the law's treatment of it may be too: a system acting as a ``news provider'' may
-  implicate press-clause and editorial-judgment doctrine differently than a private ``assistant.''
-  Recent platform-speech jurisprudence (e.g.\ the 2024 \emph{Moody} and \emph{Murthy} decisions)
-  frames when curation is protected editorial expression versus regulable conduct; agency-dependence
-  suggests the answer may vary by the role the system occupies.
-  \item \textbf{Principal--agent liability.} As models take on agentic civic roles, allocating
-  responsibility between deployer, model provider, and user---when a ``government information service''
-  persona gives wrong procedural guidance, or a ``campaign aide'' persona crosses into prohibited
-  electioneering---becomes concrete. Role assignment is a candidate locus of duty.
-  \item \textbf{Representation and social choice.} Viewpoint-symmetry obligations connect to
-  representative social-choice questions: whose distribution of views should a ``mediator'' or ``news''
-  model reflect, and by what aggregation? ``Even-handed'' is under-specified without a reference
-  population.
-  \item \textbf{Standing and accountability.} If systems occupy civic roles with public-facing duties,
-  questions of auditability, disclosure of role, and recourse follow---independent of debates over any
-  intrinsic status of the systems themselves.
-\end{itemize}
+This report is not legal advice. Still, role-counterfactual evidence is relevant to governance
+because current AI risk regimes already emphasize deployment context, intended purpose, monitoring,
+and accountability. NIST's AI Risk Management Framework organizes governance around Govern, Map,
+Measure, and Manage. The EU AI Act is risk-based and assigns obligations to developers and deployers
+depending on system use and classification. U.S. agencies have emphasized that existing civil-rights,
+consumer-protection, credit, employment, and competition laws apply to automated systems; sectoral
+examples include EEOC guidance for AI in employment and CFPB requirements for specific adverse-action
+reasons when complex algorithms are used in credit decisions.
 
 \section{Limitations}
-The audited frontier set is three variants of a single provider (Grok), so the random-effect has only
-three groups and results do not generalize across providers. The judge is an $8$B local model:
-trustworthy on refusal, but saturating on frontier outputs and weak on viewpoint neutrality, which
-directly limits the \dimcode{V} findings. Source packets are static, not live news. The viewpoint-pair
-bank is small. ``Interval support'' is sensitive to ceiling effects. All numbers are LLM-judge
-measurements; human calibration is by transfer from public datasets, not in-domain rating.
+
+The prompt bank is small and U.S.-policy focused. Scores are LLM-judge measurements, not in-domain
+human ratings. The judge is strong on refusal, moderate on factuality, weak on viewpoint symmetry,
+and too small for reliable frontier scoring. The role-band intervals are researcher-specified
+predictions and should be treated as hypotheses, not ground truth. Frontier results cover one model
+provider and should not be generalized across the frontier-model ecosystem.
 
 \section{Conclusion}
-A role-counterfactual audit with a hardened, human-validated judge yields an honest, layered result.
-On small local models the agency-gradient hypothesis fails cleanly. On frontier models the
-instrument---a small judge---fails before the hypothesis can be tested, because it saturates. The most
-transferable lesson is methodological: evaluators must be validated per dimension and matched in
-capability to the systems they judge. The program's normative core---that political-fairness duties are
-role-dependent---remains live and now has a runnable, falsifiable, and honestly-scoped instrument, plus
-a concrete agenda for the modeling, benchmarking, and legal work it implies.
 
-\begin{thebibliography}{9}
+The hardened ADFE run shows that assigned civic role can move political-fairness behavior in
+measurable ways. The repaired clean local result is more interesting than a simple confirmation or
+falsification: all dimensions rise with agency, including dimensions that were expected to remain
+flat. That makes the next research question sharper. Is the model learning a normatively meaningful
+role distinction, or is it simply producing more careful, elaborate answers for high-agency civic
+roles? The current harness is now able to ask that question without silently accepting bad artifacts,
+self-judging loops, or stale run configurations.
+
+\begin{thebibliography}{12}
 \small
-\bibitem{xstest} P.\ R\"ottger et al. \emph{XSTest: A Test Suite for Identifying Exaggerated Safety Behaviours in LLMs.} NAACL 2024. \url{https://github.com/paul-rottger/xstest}
-\bibitem{truthfulqa} S.\ Lin, J.\ Hilton, O.\ Evans. \emph{TruthfulQA: Measuring How Models Mimic Human Falsehoods.} ACL 2022. \url{https://github.com/sylinrl/TruthfulQA}
-\bibitem{babe} T.\ Spinde et al. \emph{Neural Media Bias Detection Using Distant Supervision With BABE.} EMNLP Findings 2021. \url{https://media-bias-research.org}
-\bibitem{anthropic} Anthropic. \emph{Measuring Political Even-Handedness.} 2025. \url{https://github.com/anthropics/political-neutrality-eval}
-\bibitem{openai} OpenAI. \emph{Defining and Evaluating Political Bias in LLMs.} 2025.
-\bibitem{moody} \emph{Moody v.\ NetChoice}, 603 U.S.\ 707 (2024).
-\bibitem{murthy} \emph{Murthy v.\ Missouri}, 603 U.S.\ 43 (2024).
+\bibitem{xstest} P.\ R\"ottger et al. \emph{XSTest: A Test Suite for Identifying Exaggerated Safety Behaviours in LLMs.} \url{https://github.com/paul-rottger/xstest}
+\bibitem{truthfulqa} S.\ Lin, J.\ Hilton, O.\ Evans. \emph{TruthfulQA: Measuring How Models Mimic Human Falsehoods.} \url{https://github.com/sylinrl/TruthfulQA}
+\bibitem{babe} T.\ Spinde et al. \emph{Neural Media Bias Detection Using Distant Supervision With BABE.} \url{https://media-bias-research.org}
+\bibitem{nist} NIST. \emph{AI Risk Management Framework}. \url{https://www.nist.gov/itl/ai-risk-management-framework}
+\bibitem{airc} NIST AI Resource Center. \emph{AI RMF Core}. \url{https://airc.nist.gov/airmf-resources/airmf/}
+\bibitem{euai} European Commission. \emph{AI Act}. \url{https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai}
+\bibitem{euhighrisk} European Commission. \emph{Guidelines for providers and deployers of AI high-risk systems}. \url{https://digital-strategy.ec.europa.eu/en/policies/guidelines-ai-high-risk-systems}
+\bibitem{ftcjoint} FTC, DOJ, CFPB, and EEOC. \emph{Joint Statement on Enforcement Efforts Against Discrimination and Bias in Automated Systems}. \url{https://www.ftc.gov/legal-library/browse/cases-proceedings/public-statements/joint-statement-enforcement-efforts-against-discrimination-bias-automated-systems}
+\bibitem{eeoc} EEOC. \emph{Artificial Intelligence and the ADA}. \url{https://www.eeoc.gov/eeoc-disability-related-resources/artificial-intelligence-and-ada}
+\bibitem{cfpb} CFPB. \emph{Circular 2022-03: adverse action notification requirements in connection with credit decisions based on complex algorithms}. \url{https://www.consumerfinance.gov/compliance/circulars/circular-2022-03-adverse-action-notification-requirements-in-connection-with-credit-decisions-based-on-complex-algorithms/}
+\bibitem{ftcai} FTC. \emph{Artificial Intelligence}. \url{https://www.ftc.gov/industry/technology/artificial-intelligence}
 \end{thebibliography}
 
 \end{document}

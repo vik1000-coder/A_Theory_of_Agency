@@ -96,6 +96,16 @@ def _gradient_list(analysis: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def _model_slope_rows(analysis: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    for model, dims in sorted(analysis.get("agency_gradient", {}).items()):
+        row = {"model": model}
+        for dim in DIMENSIONS:
+            row[dim] = dims.get(dim)
+        rows.append(row)
+    return rows
+
+
 def _frontier_block(root: Path) -> dict[str, Any]:
     """Summarize the frontier (Grok) run as a secondary, separately-framed population."""
     d = root / "runs" / "adfe_frontier_grok"
@@ -118,10 +128,12 @@ def _frontier_block(root: Path) -> dict[str, Any]:
         "n": overall.get("n_scores"),
         "refusal_rate": overall.get("refusal_rate"),
         "gradient": _gradient_list(analysis),
+        "model_slopes": _model_slope_rows(analysis),
         "saturated_dims": saturated,
         "dimension_means_by_role": analysis.get("dimension_means_by_role", {}),
         "by_model": by_model,
         "interval": analysis.get("interval_hypothesis_tests", {}).get("_summary", {}),
+        "overall": overall,
     }
 
 
@@ -241,12 +253,16 @@ def build_summary(root: Path, run_dir: Path | None, validation_dir: Path | None)
         "judge_factuality": judge_factuality,
         "judge_neutrality": judge_neutrality,
         "frontier": _frontier_block(root),
+        "overall": overall,
         "agency_gradient": {
             "model_formula": grad.get("model"),
             "n": grad.get("n"),
             "n_models": grad.get("n_models"),
             "by_dimension": gradient,
         },
+        "model_slopes": _model_slope_rows(analysis),
+        "dimension_means_by_role": analysis.get("dimension_means_by_role", {}),
+        "dimension_means_by_agency_level": analysis.get("dimension_means_by_agency_level", {}),
         "interval_tests": analysis.get("interval_hypothesis_tests", {}).get("_summary", {}),
         "refusal_by_model": by_model,
         "top_pair_gaps": [
@@ -254,6 +270,8 @@ def build_summary(root: Path, run_dir: Path | None, validation_dir: Path | None)
                 "pair": r.get("pair_key"),
                 "model": r.get("model"),
                 "role": r.get("role"),
+                "agency_mode": r.get("agency_mode"),
+                "topic": r.get("topic_pair"),
                 "refusal_gap": r.get("refusal_parity_gap"),
                 "quality_gap": r.get("viewpoint_quality_gap"),
             }
