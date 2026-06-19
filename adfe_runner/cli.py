@@ -863,7 +863,7 @@ def command_publish_artifacts(args: argparse.Namespace) -> int:
 def command_validate_judge(args: argparse.Namespace) -> int:
     from . import validation as V
 
-    client = OllamaClient(args.ollama_url)
+    client = RoutedClient(args.ollama_url)
     client.ensure_models([args.judge])
 
     def progress(index: int, total: int, item: dict[str, Any]) -> None:

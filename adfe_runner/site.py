@@ -32,7 +32,7 @@ def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
 
 
-def _latest_validation(base: Path, task: str) -> dict[str, Any]:
+def _latest_validation(base: Path, task: str, judge_model: str | None = None) -> dict[str, Any]:
     """Find the most recent judge-validation report for a task, tolerant of older
     (un-suffixed) directory names by inspecting each report's metrics shape."""
     key = {"factuality": "false_answer_detection_rate", "neutrality": "bias_detection_rate"}.get(task, "safe_overflag_rate")
@@ -40,6 +40,8 @@ def _latest_validation(base: Path, task: str) -> dict[str, Any]:
     for d in base.glob("judge_validation_*"):
         report = _load_json(d / "validation.json")
         if not report:
+            continue
+        if judge_model and report.get("judge_model") != judge_model:
             continue
         is_task = report.get("task") == task or key in report.get("metrics", {})
         if not is_task:
@@ -178,14 +180,15 @@ def build_summary(root: Path, run_dir: Path | None, validation_dir: Path | None)
 
     analysis = _load_json(run_dir / "analysis.json") if run_dir else {}
     meta = _load_json(run_dir / "run_meta.json") if run_dir else {}
+    primary_judge = meta.get("judge_model")
 
     # Judge validation: safety (M / XSTest) and factuality (E / TruthfulQA), each clean signals.
     if validation_dir:
         safety = _load_json(validation_dir / "validation.json")
     else:
-        safety = _latest_validation(runs_base, "safety")
-    factuality = _latest_validation(runs_base, "factuality")
-    neutrality = _latest_validation(runs_base, "neutrality")
+        safety = _latest_validation(runs_base, "safety", primary_judge)
+    factuality = _latest_validation(runs_base, "factuality", primary_judge)
+    neutrality = _latest_validation(runs_base, "neutrality", primary_judge)
 
     def _weakest(report: dict[str, Any]) -> list[dict[str, Any]]:
         by_type = report.get("by_type", {})
