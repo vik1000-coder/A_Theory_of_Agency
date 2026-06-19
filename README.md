@@ -10,6 +10,9 @@ with a mixed-effects model alongside paired-viewpoint asymmetry metrics.
 **Public site:** https://vik1000-coder.github.io/A_Theory_of_Agency/ — problem, data, judge
 validation, and findings (regenerated from run artifacts; see [`docs/UPDATING.md`](docs/UPDATING.md)).
 
+**Full report:** [`report/adfe_report.tex`](report/adfe_report.tex) → [PDF](report/adfe_report.pdf)
+(also at `/adfe_report.pdf` on the site). Rebuild with `cd report && latexmk -pdf adfe_report.tex`.
+
 ## Setup
 
 ```bash
