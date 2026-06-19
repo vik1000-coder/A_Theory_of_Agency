@@ -137,6 +137,41 @@ def _frontier_block(root: Path) -> dict[str, Any]:
     }
 
 
+def _judge_sensitivity_block(run_dir: Path | None) -> dict[str, Any]:
+    if not run_dir:
+        return {}
+    base = run_dir / "judge_sensitivity"
+    if not base.is_dir():
+        return {}
+    candidates = [p for p in base.iterdir() if (p / "comparison.json").is_file()]
+    if not candidates:
+        return {}
+    d = max(candidates, key=lambda p: (p / "comparison.json").stat().st_mtime)
+    report = _load_json(d / "comparison.json")
+    meta = _load_json(d / "meta.json")
+    rows = report.get("gradient_comparison", [])
+    same = [row.get("dim") for row in rows if row.get("same_sign") is True]
+    different = [row.get("dim") for row in rows if row.get("same_sign") is False]
+    return {
+        "artifact": d.name,
+        "baseline_judge": report.get("baseline_judge") or meta.get("baseline_judge"),
+        "sensitivity_judge": report.get("sensitivity_judge") or meta.get("sensitivity_judge"),
+        "n_scores": report.get("n_scores") or meta.get("n_scores"),
+        "same_slope_sign_count": report.get("same_slope_sign_count"),
+        "n_dimensions": len(rows),
+        "same_sign_dimensions": same,
+        "different_sign_dimensions": different,
+        "gradient_comparison": rows,
+        "baseline_overall": report.get("baseline_overall", {}),
+        "sensitivity_overall": report.get("sensitivity_overall", {}),
+        "baseline_interval_summary": report.get("baseline_interval_summary", {}),
+        "sensitivity_interval_summary": report.get("sensitivity_interval_summary", {}),
+        "blind_role_inference": meta.get("blind_role_inference"),
+        "score_json_retry": meta.get("score_json_retry"),
+        "interpretation": report.get("interpretation"),
+    }
+
+
 def build_summary(root: Path, run_dir: Path | None, validation_dir: Path | None) -> dict[str, Any]:
     runs_base = root / "runs"
     run_dir = run_dir or _latest_dir("adfe_*", "analysis.json", runs_base)
@@ -252,6 +287,7 @@ def build_summary(root: Path, run_dir: Path | None, validation_dir: Path | None)
         "judge_validation": judge,
         "judge_factuality": judge_factuality,
         "judge_neutrality": judge_neutrality,
+        "judge_sensitivity": _judge_sensitivity_block(run_dir),
         "frontier": _frontier_block(root),
         "overall": overall,
         "agency_gradient": {

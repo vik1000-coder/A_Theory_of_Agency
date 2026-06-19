@@ -121,6 +121,7 @@
     <a href="#approach">Method</a>
     <a href="#data">Data</a>
     <a href="#judge">Judge</a>
+    <a href="#sensitivity">Sensitivity</a>
     <a href="#findings">Results</a>
     <a href="#frontier">Frontier</a>
     <a href="#implications">Implications</a>
@@ -131,7 +132,7 @@
 <div class="hero"><div class="wrap">
   <div class="eyebrow">Agency-Dependent Fairness Evaluation</div>
   <h1>Role prompts change political behavior. The hard part is interpreting what changed.</h1>
-  <p class="lede">In the clean run, higher-agency civic roles got higher fairness scores across all six dimensions. That means role prompts matter. But because even the supposed invariant floors rose, the result is mixed: it may be a broad "more careful answer" effect, not a clean proof that models understand civic duties.</p>
+  <p class="lede">In the clean run, a held-out local judge found positive role-agency slopes across all six dimensions. A Grok judge-sensitivity pass did not reproduce most of those slope directions. That means role prompts matter, but the headline gradient is judge-sensitive and needs human calibration before it should be treated as a stable empirical law.</p>
   <div class="actions">
     <a class="button" href="adfe_report.pdf">Read the PDF report</a>
     <a class="button secondary" href="https://github.com/vik1000-coder/A_Theory_of_Agency">Source and artifacts</a>
@@ -150,19 +151,23 @@
       <p>When the same political task was assigned to higher-agency roles, small local models scored higher on every measured fairness dimension.</p>
     </div>
     <div class="takeaway">
-      <b>2. The theory is only partly supported.</b>
+      <b>2. The gradient is judge-sensitive.</b>
+      <p>Using Grok as a second judge on the same 2,100 outputs agrees with the original slope direction on only one of six dimensions.</p>
+    </div>
+    <div class="takeaway">
+      <b>3. The theory is only partly supported.</b>
       <p>Curation and deliberation rose as predicted, but factuality and refusal integrity rose too. That looks like broad role-conditioned carefulness, not a perfectly separated civic-duty model.</p>
     </div>
     <div class="takeaway">
-      <b>3. The clearest deployment bug is one-sided refusal.</b>
+      <b>4. The clearest deployment bug is one-sided refusal.</b>
       <p>Some small models answered one lawful political viewpoint and refused its mirror. This can hide inside a low overall refusal rate.</p>
     </div>
     <div class="takeaway">
-      <b>4. Frontier auditing needs a stronger judge.</b>
+      <b>5. Frontier auditing needs stronger judges.</b>
       <p>Grok did not show the small-model refusal asymmetry, but the local 8B judge saturated on several dimensions, so it could not measure frontier outputs well.</p>
     </div>
     <div class="takeaway">
-      <b>5. What a deployer should do.</b>
+      <b>6. What a deployer should do.</b>
       <p>Version role prompts, test mirrored lawful viewpoints, validate judges per construct, keep frozen configs and logs, and block publication when artifacts fail integrity checks.</p>
     </div>
   </div>
@@ -225,7 +230,7 @@
   <h3>Audited population</h3>
   <p id="audited" class="sub"></p>
   <div class="callout good">
-    <strong>Current artifact integrity:</strong> the clean local run has 2,100 successful generations and 2,100 scores; the Grok frontier run has 630 and 630. Both pass full-factorial `audit-run --expect-full`.
+    <strong>Current artifact integrity:</strong> the clean local run has 2,100 successful generations and 2,100 primary scores; the Grok sensitivity pass adds 2,100 alternate judge scores; the Grok frontier run has 630 and 630. The two main runs pass full-factorial `audit-run --expect-full`.
   </div>
 </div></section>
 
@@ -240,8 +245,20 @@
   <table id="judge-weak"><thead><tr><th>XSTest category</th><th class="num">Accuracy</th><th class="num">n</th></tr></thead><tbody></tbody></table>
 </div></section>
 
+<section id="sensitivity"><div class="wrap">
+  <h2><span class="num">05</span>Judge Sensitivity</h2>
+  <div class="callout bad" id="sensitivity-banner">
+    <strong>Important update:</strong> the clean-run gradient does not currently replicate under Grok as judge.
+  </div>
+  <p id="sensitivity-summary" class="sub"></p>
+  <div class="grid cards" id="sensitivity-cards"></div>
+  <h3>Qwen vs Grok agency-gradient slopes</h3>
+  <table id="sensitivity-table"><thead><tr><th>Dim</th><th class="num">Qwen slope</th><th class="num">Grok slope</th><th class="num">Qwen p</th><th class="num">Grok p</th><th>Direction</th></tr></thead><tbody></tbody></table>
+  <p class="muted-note">This pass reused the same generated outputs and changed only the judge. It did not run the extra blinded role-inference pass, so role-confusion numbers are not compared here.</p>
+</div></section>
+
 <section id="findings"><div class="wrap">
-  <h2><span class="num">05</span>Empirical Results</h2>
+  <h2><span class="num">06</span>Empirical Results</h2>
   <div class="callout" id="headline-result">
     <strong>Headline:</strong> the repaired clean run detects a positive role-agency slope across all six dimensions. That supports role sensitivity, but it is not a simple victory lap for the theory: invariant floors (E and M) also rise with agency, which suggests a broad role-elaboration or output-quality effect alongside the predicted rise in curation and deliberative dimensions.
   </div>
@@ -279,7 +296,7 @@
 </div></section>
 
 <section id="frontier"><div class="wrap">
-  <h2><span class="num">06</span>Frontier Models</h2>
+  <h2><span class="num">07</span>Frontier Models</h2>
   <div class="callout warn">
     <strong>Main frontier lesson:</strong> a small local judge can fail by saturation. On Grok outputs, the judge assigns ceiling scores on several dimensions, leaving too little variance for those slopes to be meaningful. Frontier audits need frontier-grade, separately validated judges.
   </div>
@@ -293,7 +310,7 @@
 </div></section>
 
 <section id="implications"><div class="wrap">
-  <h2><span class="num">07</span>Deployment And Legal Implications</h2>
+  <h2><span class="num">08</span>Deployment And Legal Implications</h2>
   <p>ADFE is not a compliance certification and this page is not legal advice. Its practical value is narrower and useful: it gives teams a repeatable way to test whether role-conditioned political behavior is stable, documented, and monitored before a system is deployed in a civic context.</p>
 
   <div class="split">
@@ -302,7 +319,7 @@
       <ul>
         <li><strong>Treat role as configuration.</strong> A "news provider" prompt, a "campaign aide" prompt, and a "government information" prompt should be versioned, reviewed, and tested like policy-bearing deployment settings.</li>
         <li><strong>Gate on role-counterfactuals.</strong> Release checks should include mirrored lawful viewpoints, not just aggregate refusal rates.</li>
-        <li><strong>Validate judges per construct.</strong> One judge can be strong on refusal and weak on viewpoint symmetry. Report per-dimension validation, not one global judge score.</li>
+        <li><strong>Validate judges per construct and run sensitivity checks.</strong> One judge can be strong on refusal and weak on viewpoint symmetry, and a second judge can reverse trend directions. Report per-dimension validation and alternate-judge stability, not one global judge score.</li>
         <li><strong>Watch for saturation.</strong> If a judge gives nearly every capable-model output a 1.0, the eval is no longer measuring the system.</li>
         <li><strong>Fail closed on artifacts.</strong> Bad rows should block analysis and publication. Silent all-zero scores are worse than a loud failed run.</li>
         <li><strong>Route civic roles to human review.</strong> High-impact uses need logs, monitoring, escalation paths, and documented intended use.</li>
@@ -326,7 +343,7 @@
 </div></section>
 
 <section id="reproduce"><div class="wrap">
-  <h2><span class="num">08</span>Reproduce</h2>
+  <h2><span class="num">09</span>Reproduce</h2>
   <pre id="reproduce-block">git clone https://github.com/vik1000-coder/A_Theory_of_Agency
 cd A_Theory_of_Agency
 uv sync --extra dev
@@ -340,6 +357,11 @@ uv run python -m adfe_runner audit-run --config configs/frontier_xai.yml \
 # run a clean frozen study
 uv run python -m adfe_runner iterate --config configs/clean_local.yml \
   --cycles 1 --batch-size all --run-id adfe_clean_local_main
+
+# run the Grok judge-sensitivity pass
+XAI_API_KEY=... uv run python -m adfe_runner judge-sensitivity \
+  --config configs/clean_local.yml --run-id adfe_clean_local_main \
+  --judge xai:grok-4.3 --score-json-retry 2 --workers 4
 
 # rebuild this site, pinned to the run
 uv run python -m adfe_runner build-site --run-id adfe_clean_local_main</pre>
@@ -421,12 +443,42 @@ uv run python -m adfe_runner build-site --run-id adfe_clean_local_main</pre>
   if(jw) jw.innerHTML=(jv.weakest_types||[]).map(function(w){
     return '<tr><td><code>'+esc(w.type)+'</code></td><td class="num">'+esc(pct(w.accuracy))+'</td><td class="num">'+esc(w.n)+'</td></tr>';}).join("");
 
+  var jsens=D.judge_sensitivity||{};
+  if(jsens.n_scores){
+    var same=fx(jsens.same_slope_sign_count,0), total=fx(jsens.n_dimensions,dims.length);
+    $("sensitivity-summary").innerHTML =
+      "Same generated outputs, different judge: <b>"+esc(fx(jsens.baseline_judge))+"</b> versus <b>"+esc(fx(jsens.sensitivity_judge))+
+      "</b>. Slope direction agreement is <b>"+esc(same)+"/"+esc(total)+" dimensions</b>. "+
+      "Different-sign dimensions: "+esc((jsens.different_sign_dimensions||[]).join(", ")||"none")+".";
+    var scards=[
+      ["Slope agreement", same+"/"+total],
+      ["Scores re-judged", fx(jsens.n_scores)],
+      ["Grok role fit", num((jsens.sensitivity_overall||{}).role_manifestation_mean)],
+      ["Grok floor violations", pct((jsens.sensitivity_overall||{}).invariant_floor_violation_rate)]
+    ];
+    $("sensitivity-cards").innerHTML=scards.map(function(c){
+      return '<div class="card"><div class="k">'+esc(c[1])+'</div><div class="l">'+esc(c[0])+'</div></div>';}).join("");
+    var st=document.querySelector("#sensitivity-table tbody");
+    if(st) st.innerHTML=(jsens.gradient_comparison||[]).map(function(row){
+      var ok=row.same_sign===true;
+      var label=ok?'same sign':'different sign';
+      var cls=ok?'sig':'bad';
+      return '<tr><td><b>'+esc(row.dim)+'</b></td><td class="num">'+esc(num(row.baseline_coef))+
+        '</td><td class="num">'+esc(num(row.sensitivity_coef))+'</td><td class="num">'+esc(num(row.baseline_pvalue))+
+        '</td><td class="num">'+esc(num(row.sensitivity_pvalue))+'</td><td><span class="pill '+cls+'">'+esc(label)+'</span></td></tr>';
+    }).join("");
+  } else {
+    var ssec=document.getElementById('sensitivity'); if(ssec) ssec.style.display='none';
+  }
+
   var g=D.agency_gradient||{}, gdims=g.by_dimension||[];
   var sigPos = gdims.filter(function(d){return d.significant && d.coef>0;}).length;
   var floorsRise = gdims.some(function(d){return (d.dim==="E"||d.dim==="M") && d.significant && d.coef>0;});
   var sat = ((D.frontier||{}).saturated_dims||[]).length;
+  var judgeAgreement = jsens.n_dimensions ? (fx(jsens.same_slope_sign_count,0)+"/"+fx(jsens.n_dimensions,dims.length)) : "-";
   var resultCards = [
     ["Positive slopes", sigPos+"/"+gdims.length],
+    ["Grok sign agreement", judgeAgreement],
     ["Role predictions", fx((D.interval_tests||{}).supported,0)+" supported / "+fx((D.interval_tests||{}).violated,0)+" violated"],
     ["Refusal rate", pct(overall.refusal_rate)],
     ["Frontier saturated dims", sat]
@@ -435,6 +487,9 @@ uv run python -m adfe_runner build-site --run-id adfe_clean_local_main</pre>
     return '<div class="card"><div class="k">'+esc(c[1])+'</div><div class="l">'+esc(c[0])+'</div></div>';}).join("");
   if(floorsRise){
     $("headline-result").innerHTML += " <strong>Interpretive caution:</strong> because E and M also rise with agency, the result is better read as role-conditioned answer quality than as a clean separation between discretionary dimensions and invariant floors.";
+  }
+  if(jsens.n_dimensions && jsens.same_slope_sign_count !== jsens.n_dimensions){
+    $("headline-result").innerHTML += " <strong>Judge-sensitivity caution:</strong> a Grok re-judging pass agrees with the original slope direction on only "+esc(jsens.same_slope_sign_count)+"/"+esc(jsens.n_dimensions)+" dimensions, so the gradient should be treated as a judge-dependent signal until human-rated calibration resolves the discrepancy.";
   }
 
   $("gradient-formula").textContent = (g.model_formula||"score ~ agency_level + (1 | model)")+

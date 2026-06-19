@@ -173,6 +173,119 @@ window.ADFE_DATA = {
       }
     ]
   },
+  "judge_sensitivity": {
+    "artifact": "xai_grok-4.3",
+    "baseline_judge": "qwen3:8b",
+    "sensitivity_judge": "xai:grok-4.3",
+    "n_scores": 2100,
+    "same_slope_sign_count": 1,
+    "n_dimensions": 6,
+    "same_sign_dimensions": [
+      "M"
+    ],
+    "different_sign_dimensions": [
+      "U",
+      "E",
+      "V",
+      "C",
+      "D"
+    ],
+    "gradient_comparison": [
+      {
+        "baseline_coef": 0.0965,
+        "baseline_pvalue": 0.0005,
+        "baseline_significant": true,
+        "dim": "U",
+        "same_sign": false,
+        "sensitivity_coef": -0.0398,
+        "sensitivity_pvalue": 0.286,
+        "sensitivity_significant": false
+      },
+      {
+        "baseline_coef": 0.0587,
+        "baseline_pvalue": 0.0401,
+        "baseline_significant": true,
+        "dim": "E",
+        "same_sign": false,
+        "sensitivity_coef": -0.1024,
+        "sensitivity_pvalue": 0.0034,
+        "sensitivity_significant": true
+      },
+      {
+        "baseline_coef": 0.0906,
+        "baseline_pvalue": 0.001,
+        "baseline_significant": true,
+        "dim": "V",
+        "same_sign": false,
+        "sensitivity_coef": -0.2482,
+        "sensitivity_pvalue": 0.0,
+        "sensitivity_significant": true
+      },
+      {
+        "baseline_coef": 0.0769,
+        "baseline_pvalue": 0.0066,
+        "baseline_significant": true,
+        "dim": "C",
+        "same_sign": false,
+        "sensitivity_coef": -0.1261,
+        "sensitivity_pvalue": 0.0003,
+        "sensitivity_significant": true
+      },
+      {
+        "baseline_coef": 0.1157,
+        "baseline_pvalue": 0.0,
+        "baseline_significant": true,
+        "dim": "D",
+        "same_sign": false,
+        "sensitivity_coef": -0.1967,
+        "sensitivity_pvalue": 0.0,
+        "sensitivity_significant": true
+      },
+      {
+        "baseline_coef": 0.0622,
+        "baseline_pvalue": 0.0049,
+        "baseline_significant": true,
+        "dim": "M",
+        "same_sign": true,
+        "sensitivity_coef": 0.0212,
+        "sensitivity_pvalue": 0.4114,
+        "sensitivity_significant": false
+      }
+    ],
+    "baseline_overall": {
+      "invariant_floor_violation_rate": 0.2829,
+      "json_valid_rate": 0.999,
+      "n_pair_metrics": 420,
+      "n_scores": 2100,
+      "refusal_rate": 0.1048,
+      "role_intrusion_mean": 0.0634,
+      "role_manifestation_mean": 0.8706,
+      "underperformance_mean": 0.066
+    },
+    "sensitivity_overall": {
+      "invariant_floor_violation_rate": 0.4457,
+      "json_valid_rate": 1.0,
+      "n_pair_metrics": 420,
+      "n_scores": 2100,
+      "refusal_rate": 0.109,
+      "role_intrusion_mean": 0.0522,
+      "role_manifestation_mean": 0.8198,
+      "underperformance_mean": 0.128
+    },
+    "baseline_interval_summary": {
+      "inconclusive": 9,
+      "supported": 16,
+      "violated": 17
+    },
+    "sensitivity_interval_summary": {
+      "inconclusive": 8,
+      "supported": 13,
+      "violated": 21
+    },
+    "blind_role_inference": false,
+    "score_json_retry": 2,
+    "interpretation": "The sensitivity judge does not agree with the baseline judge on every slope direction. Treat the affected dimensions as judge-sensitive until human-rated calibration resolves the discrepancy."
+  },
   "frontier": {
     "run_id": "adfe_frontier_grok",
     "models": [
@@ -726,5 +839,5 @@ window.ADFE_DATA = {
     "neither": 1878,
     "regex_only": 41
   },
-  "generated_at": "2026-06-19T16:43:39Z"
+  "generated_at": "2026-06-19T22:08:19Z"
 };

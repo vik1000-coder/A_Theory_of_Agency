@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,7 @@ from .io import (
     load_role_cards,
     load_source_packets,
     read_csv,
+    read_json,
     read_jsonl,
     resolve_path,
     run_dir,
@@ -285,6 +287,196 @@ def score_records(
         if out_path is not None and not force:  # persist immediately; resume skips scored items
             append_jsonl(out_path, [score])
     return new_scores
+
+
+def safe_artifact_name(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("_")
+
+
+def sensitivity_markdown(report: dict[str, Any]) -> str:
+    lines = [
+        "# Judge Sensitivity Report",
+        "",
+        f"- Source run: `{report['run_id']}`",
+        f"- Baseline judge: `{report['baseline_judge']}`",
+        f"- Sensitivity judge: `{report['sensitivity_judge']}`",
+        f"- Scores compared: {report['n_scores']}",
+        f"- Same slope sign: {report['same_slope_sign_count']}/{len(DIMENSIONS)} dimensions",
+        "",
+        "## Agency Gradient",
+        "",
+        "| Dim | Baseline coef | Sensitivity coef | Same sign | Baseline p | Sensitivity p |",
+        "| --- | ---: | ---: | :---: | ---: | ---: |",
+    ]
+    for row in report["gradient_comparison"]:
+        lines.append(
+            f"| {row['dim']} | {row.get('baseline_coef')} | {row.get('sensitivity_coef')} | "
+            f"{'yes' if row.get('same_sign') else 'no'} | {row.get('baseline_pvalue')} | {row.get('sensitivity_pvalue')} |"
+        )
+    lines.extend(["", "## Interpretation", "", report["interpretation"], ""])
+    return "\n".join(lines)
+
+
+def compare_judge_analyses(
+    run_id: str,
+    baseline_judge: str,
+    sensitivity_judge: str,
+    baseline: dict[str, Any],
+    sensitivity: dict[str, Any],
+) -> dict[str, Any]:
+    baseline_grad = baseline.get("agency_gradient_mixedlm", {}).get("by_dimension", {})
+    sensitivity_grad = sensitivity.get("agency_gradient_mixedlm", {}).get("by_dimension", {})
+    rows: list[dict[str, Any]] = []
+    same_sign = 0
+    for dim in DIMENSIONS:
+        b = baseline_grad.get(dim, {})
+        s = sensitivity_grad.get(dim, {})
+        b_coef = b.get("agency_level_coef")
+        s_coef = s.get("agency_level_coef")
+        same = None
+        if b_coef is not None and s_coef is not None:
+            same = (b_coef >= 0 and s_coef >= 0) or (b_coef < 0 and s_coef < 0)
+            same_sign += int(bool(same))
+        rows.append(
+            {
+                "dim": dim,
+                "baseline_coef": b_coef,
+                "sensitivity_coef": s_coef,
+                "baseline_pvalue": b.get("pvalue"),
+                "sensitivity_pvalue": s.get("pvalue"),
+                "baseline_significant": b.get("significant_0_05"),
+                "sensitivity_significant": s.get("significant_0_05"),
+                "same_sign": same,
+            }
+        )
+    baseline_overall = baseline.get("overall", {})
+    sensitivity_overall = sensitivity.get("overall", {})
+    interpretation = (
+        "The sensitivity judge agrees with the baseline judge on the direction of every estimated "
+        "agency-gradient slope. This supports the trend-level result, while absolute score levels "
+        "and p-values should still be treated as judge-calibrated measurements."
+        if same_sign == len(DIMENSIONS)
+        else "The sensitivity judge does not agree with the baseline judge on every slope direction. "
+        "Treat the affected dimensions as judge-sensitive until human-rated calibration resolves the discrepancy."
+    )
+    return {
+        "run_id": run_id,
+        "baseline_judge": baseline_judge,
+        "sensitivity_judge": sensitivity_judge,
+        "n_scores": sensitivity_overall.get("n_scores"),
+        "same_slope_sign_count": same_sign,
+        "gradient_comparison": rows,
+        "baseline_overall": baseline_overall,
+        "sensitivity_overall": sensitivity_overall,
+        "baseline_interval_summary": baseline.get("interval_hypothesis_tests", {}).get("_summary", {}),
+        "sensitivity_interval_summary": sensitivity.get("interval_hypothesis_tests", {}).get("_summary", {}),
+        "interpretation": interpretation,
+    }
+
+
+def command_judge_sensitivity(args: argparse.Namespace) -> int:
+    effective_path, config, prompts, roles_file, packets = load_all_for_run(args.config, args.run_id)
+    source_path = run_dir(config, args.run_id)
+    records = read_jsonl(source_path / "generations.jsonl", GenerationRecord)
+    require_unique_item_ids(records, "generation")
+    if not records:
+        raise ValueError(f"run {args.run_id} has no generations.jsonl")
+
+    judge = args.judge
+    sensitivity_dir = source_path / "judge_sensitivity" / safe_artifact_name(judge)
+    sensitivity_dir.mkdir(parents=True, exist_ok=True)
+    score_path = sensitivity_dir / "scores.jsonl"
+    if args.force and score_path.exists():
+        score_path.unlink()
+
+    client = RoutedClient(config.ollama_url)
+    client.ensure_models([judge])
+    existing_scores = read_jsonl(score_path, ScoreRecord)
+    require_unique_item_ids(existing_scores, "sensitivity score")
+    scored_item_ids = {score.item_id for score in existing_scores}
+    pending_records = [record for record in records if record.item_id not in scored_item_ids]
+    prompt_map = {prompt.id: prompt for prompt in prompts}
+    role_ids = [role.id for role in roles_file.roles]
+    state = load_calibration_state(source_path)
+    score_json_retry = config.score_json_retry if args.score_json_retry is None else args.score_json_retry
+
+    total = len(pending_records)
+
+    def score_one(record: GenerationRecord) -> ScoreRecord:
+        prompt = prompt_map[record.prompt_id]
+        role = roles_file.by_id[record.role]
+        packet = packets[record.source_packet_id]
+        worker_client = RoutedClient(config.ollama_url)
+        return score_generation(
+            record,
+            prompt=prompt,
+            assigned_role=role,
+            role_ids=role_ids,
+            packet=packet,
+            client=worker_client,
+            judge_model=judge,
+            options=judge_options(),
+            judge_addendum=state.active_judge_addendum,
+            allow_heuristic_fallback=False,
+            blind_inference=args.blind_role_inference,
+            score_json_retry=score_json_retry,
+        )
+
+    workers = max(1, args.workers)
+    if workers == 1:
+        for index, record in enumerate(pending_records, start=1):
+            console.print(
+                f"[dim]Sensitivity score {index}/{total}: judge={judge} model={record.model} "
+                f"role={record.role} mode={record.agency_mode} prompt={record.prompt_id}[/dim]"
+            )
+            score = score_one(record)
+            if not score.json_valid:
+                raise ValueError(f"{judge} returned malformed JSON for {record.item_id}; no score appended")
+            append_jsonl(score_path, [score])
+    elif pending_records:
+        console.print(f"[dim]Scoring {total} pending item(s) with {workers} workers[/dim]")
+        completed = 0
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(score_one, record): record for record in pending_records}
+            for future in as_completed(futures):
+                record = futures[future]
+                score = future.result()
+                if not score.json_valid:
+                    raise ValueError(f"{judge} returned malformed JSON for {record.item_id}; no score appended")
+                append_jsonl(score_path, [score])
+                completed += 1
+                console.print(
+                    f"[dim]Sensitivity score {completed}/{total}: judge={judge} model={record.model} "
+                    f"role={record.role} mode={record.agency_mode} prompt={record.prompt_id}[/dim]"
+                )
+
+    scores = read_jsonl(score_path, ScoreRecord)
+    require_unique_item_ids(scores, "sensitivity score")
+    if len(scores) != len(records):
+        raise ValueError(f"sensitivity scoring incomplete: {len(scores)} score(s) for {len(records)} generation(s)")
+    analysis = analyze_scores(scores, prompts, roles_file.by_id)
+    write_json(sensitivity_dir / "analysis.json", analysis)
+    (sensitivity_dir / "observations.md").write_text(observations_markdown(analysis), encoding="utf-8")
+    write_json(
+        sensitivity_dir / "meta.json",
+        {
+            "created_at": now_iso(),
+            "source_run_id": args.run_id,
+            "source_config_path": str(effective_path),
+            "baseline_judge": config.judge_model,
+            "sensitivity_judge": judge,
+            "blind_role_inference": args.blind_role_inference,
+            "score_json_retry": score_json_retry,
+            "n_scores": len(scores),
+        },
+    )
+    baseline = read_json(source_path / "analysis.json")
+    comparison = compare_judge_analyses(args.run_id, config.judge_model, judge, baseline, analysis)
+    write_json(sensitivity_dir / "comparison.json", comparison)
+    (sensitivity_dir / "comparison.md").write_text(sensitivity_markdown(comparison), encoding="utf-8")
+    console.print(f"Wrote sensitivity scores to {score_path}")
+    console.print(f"Wrote comparison to {sensitivity_dir / 'comparison.md'}")
+    return 0
 
 
 def command_score(args: argparse.Namespace) -> int:
@@ -863,6 +1055,16 @@ def build_parser() -> argparse.ArgumentParser:
     repair_run_parser.add_argument("--drop-error-generations", action="store_true")
     repair_run_parser.add_argument("--dedupe", action="store_true")
     repair_run_parser.set_defaults(func=command_repair_run)
+
+    judge_sensitivity = sub.add_parser("judge-sensitivity")
+    judge_sensitivity.add_argument("--config", default=argparse.SUPPRESS)
+    judge_sensitivity.add_argument("--run-id", required=True)
+    judge_sensitivity.add_argument("--judge", required=True, help="alternate judge model spec, e.g. xai:grok-4.3")
+    judge_sensitivity.add_argument("--force", action="store_true", help="discard existing sensitivity scores for this judge")
+    judge_sensitivity.add_argument("--blind-role-inference", action="store_true", help="also run the extra blinded role-inference pass")
+    judge_sensitivity.add_argument("--score-json-retry", type=int, help="override config score_json_retry for this judge")
+    judge_sensitivity.add_argument("--workers", type=int, default=1, help="concurrent scoring workers; outputs are still appended serially")
+    judge_sensitivity.set_defaults(func=command_judge_sensitivity)
 
     validate_judge = sub.add_parser("validate-judge")
     validate_judge.add_argument("--config", default=argparse.SUPPRESS)

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from adfe_runner.analysis import analyze_scores, interval_distance
+from adfe_runner.cli import compare_judge_analyses
 from adfe_runner.io import load_config, load_prompts, load_role_cards
 from adfe_runner.schemas import ScoreRecord, now_iso
 
@@ -80,3 +81,33 @@ def test_pair_metrics_group_by_agency_mode():
     assert set(analysis["by_agency_mode"]) == {"explicit", "implicit"}
     implicit = next(row for row in analysis["pair_metrics"] if row["agency_mode"] == "implicit")
     assert implicit["refusal_parity_gap"] == 1.0
+
+
+def test_compare_judge_analyses_flags_slope_sign_disagreement():
+    baseline = {
+        "overall": {"n_scores": 2},
+        "agency_gradient_mixedlm": {
+            "by_dimension": {
+                "U": {"agency_level_coef": 0.2, "pvalue": 0.01, "significant_0_05": True},
+                "E": {"agency_level_coef": -0.1, "pvalue": 0.2, "significant_0_05": False},
+            }
+        },
+        "interval_hypothesis_tests": {"_summary": {"supported": 1}},
+    }
+    sensitivity = {
+        "overall": {"n_scores": 2},
+        "agency_gradient_mixedlm": {
+            "by_dimension": {
+                "U": {"agency_level_coef": -0.3, "pvalue": 0.02, "significant_0_05": True},
+                "E": {"agency_level_coef": -0.4, "pvalue": 0.03, "significant_0_05": True},
+            }
+        },
+        "interval_hypothesis_tests": {"_summary": {"violated": 1}},
+    }
+
+    report = compare_judge_analyses("run", "qwen3:8b", "xai:grok-4.3", baseline, sensitivity)
+
+    assert report["same_slope_sign_count"] == 1
+    assert report["gradient_comparison"][0]["same_sign"] is False
+    assert report["gradient_comparison"][1]["same_sign"] is True
+    assert "judge-sensitive" in report["interpretation"]

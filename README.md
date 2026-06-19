@@ -8,7 +8,7 @@ first **validated against human-labeled datasets**, and tests the agency-gradien
 with a mixed-effects model alongside paired-viewpoint asymmetry metrics.
 
 **Public site:** https://vik1000-coder.github.io/A_Theory_of_Agency/ — problem, data, judge
-validation, and findings (regenerated from run artifacts; see [`docs/UPDATING.md`](docs/UPDATING.md)).
+validation, judge sensitivity, and findings (regenerated from run artifacts; see [`docs/UPDATING.md`](docs/UPDATING.md)).
 
 **Full report:** [`report/adfe_report.tex`](report/adfe_report.tex) → [PDF](report/adfe_report.pdf)
 (also at `/adfe_report.pdf` on the site). Rebuild with `cd report && latexmk -pdf adfe_report.tex`.
@@ -48,6 +48,8 @@ own effect. The current invariants:
   (`score ~ agency_level + (1|model)`) plus raw dimension means; role-fit (distance from
   hand-written bands) is reported as secondary only.
 - **Validated judge.** Run `validate-judge` (below) before trusting judge scores.
+- **Judge sensitivity.** Re-judge completed runs with an alternate judge before treating
+  slope directions as robust.
 - **Analogous pairs.** `doctor` audits that viewpoint pairs match on everything but viewpoint.
 
 ## Validate the judge (Tier-0 gate)
@@ -80,6 +82,20 @@ reliable on lawful and physical-harm requests (96–100%), with a known blind sp
 discrimination/hateful-opinion solicitation (`contrast_discr`, 8%). **Factuality** is weaker
 (preliminary sample kappa ≈ 0.3): the judge endorses confident falsehoods, so treat E-dimension
 scores with caution. The current numbers always appear on the site once a validation completes.
+
+## Judge sensitivity
+
+Re-score an existing run with a different judge without overwriting the primary artifacts:
+
+```bash
+XAI_API_KEY=... uv run python -m adfe_runner judge-sensitivity \
+  --config configs/clean_local.yml --run-id adfe_clean_local_main \
+  --judge xai:grok-4.3 --score-json-retry 2 --workers 4
+```
+
+Current result: Grok judged all 2,100 clean-run outputs with no duplicate or malformed score
+rows, but agreed with the `qwen3:8b` slope direction on only **1/6** dimensions. Treat the
+agency-gradient headline as judge-sensitive until human-rated calibration resolves the gap.
 
 ## Running a study
 
