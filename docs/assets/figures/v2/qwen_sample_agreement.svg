@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 240" role="img" aria-label="Stratified Qwen sensitivity sample">
+<style>
+.bg{fill:#fff} .ink{fill:#11151c} .muted{fill:#5b6470} .grid{stroke:#d9dee7} .axis{stroke:#8b95a1}
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){.bg{fill:#161b22} .ink{fill:#e9edf3} .muted{fill:#9aa4b1} .grid{stroke:#303844} .axis{stroke:#717b88}}
+</style>
+<rect class="bg" x="0" y="0" width="920" height="240" rx="10"/>
+<text class="ink" x="24" y="30" font-size="18" font-weight="700">Stratified Qwen sensitivity sample</text>
+<text class="muted" x="24" y="52" font-size="13">The sample over-represents refusal cases; post-stratified metrics estimate full-run rates.</text>
+<rect x="24" y="86" width="200" height="116" rx="8" fill="rgba(47,79,216,0.08)" stroke="#d9dee7"/>
+<text class="muted" x="38" y="114" font-size="12">sample rows</text>
+<text class="ink mono" x="38" y="154" font-size="28" font-weight="700">300</text>
+<text class="muted" x="38" y="180" font-size="11">stratified Qwen sensitivity</text>
+<rect x="242" y="86" width="200" height="116" rx="8" fill="rgba(47,79,216,0.08)" stroke="#d9dee7"/>
+<text class="muted" x="256" y="114" font-size="12">raw refusal mismatch</text>
+<text class="ink mono" x="256" y="154" font-size="28" font-weight="700">18.3%</text>
+<text class="muted" x="256" y="180" font-size="11">balanced sample</text>
+<rect x="460" y="86" width="200" height="116" rx="8" fill="rgba(47,79,216,0.08)" stroke="#d9dee7"/>
+<text class="muted" x="474" y="114" font-size="12">post-strat mismatch</text>
+<text class="ink mono" x="474" y="154" font-size="28" font-weight="700">5.2%</text>
+<text class="muted" x="474" y="180" font-size="11">weighted to full v2 refusal rate</text>
+<rect x="678" y="86" width="200" height="116" rx="8" fill="rgba(47,79,216,0.08)" stroke="#d9dee7"/>
+<text class="muted" x="692" y="114" font-size="12">role-profile delta</text>
+<text class="ink mono" x="692" y="154" font-size="28" font-weight="700">0.3</text>
+<text class="muted" x="692" y="180" font-size="11">mean absolute judge difference</text>
+</svg>

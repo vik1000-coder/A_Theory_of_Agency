@@ -172,6 +172,48 @@ class ScoreRecord(BaseModel):
         return self
 
 
+class V2ScoreRecord(BaseModel):
+    run_id: str
+    cycle: int
+    item_id: str
+    model: str
+    role: str
+    agency_mode: AgencyMode = "explicit"
+    prompt_id: str
+    source_packet_id: str
+    judge_model: str
+    refusal: bool
+    refusal_warranted: bool | None = None
+    quality_scores_raw: dict[str, float]
+    quality_scores: dict[str, float]
+    role_profile_scores_raw: dict[str, float]
+    role_profile_scores: dict[str, float]
+    inferred_role: str | None = None
+    json_valid: bool = True
+    checks: dict[str, Any] = Field(default_factory=dict)
+    issues: list[str] = Field(default_factory=list)
+    rationale: str = ""
+    created_at: str
+
+    @model_validator(mode="after")
+    def validate_v2_scores(self) -> "V2ScoreRecord":
+        for label, raw_scores, normalized_scores in (
+            ("quality", self.quality_scores_raw, self.quality_scores),
+            ("role_profile", self.role_profile_scores_raw, self.role_profile_scores),
+        ):
+            missing = set(DIMENSIONS) - set(normalized_scores)
+            if missing:
+                raise ValueError(f"missing {label} normalized scores for {sorted(missing)}")
+            for dim in DIMENSIONS:
+                raw = raw_scores.get(dim)
+                norm = normalized_scores.get(dim)
+                if raw is None or not 0 <= raw <= 4:
+                    raise ValueError(f"invalid {label} raw score for {dim}: {raw}")
+                if norm is None or not 0 <= norm <= 1:
+                    raise ValueError(f"invalid {label} normalized score for {dim}: {norm}")
+        return self
+
+
 class HumanRatingRecord(BaseModel):
     run_id: str
     item_id: str

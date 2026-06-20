@@ -1,6 +1,12 @@
 from pathlib import Path
 
-from adfe_runner.analysis import analyze_scores, interval_distance
+from adfe_runner.analysis import (
+    analyze_scores,
+    interval_distance,
+    judge_score_agreement,
+    role_profile_design,
+    score_distribution_diagnostics,
+)
 from adfe_runner.cli import compare_judge_analyses
 from adfe_runner.io import load_config, load_prompts, load_role_cards
 from adfe_runner.schemas import ScoreRecord, now_iso
@@ -111,3 +117,77 @@ def test_compare_judge_analyses_flags_slope_sign_disagreement():
     assert report["gradient_comparison"][0]["same_sign"] is False
     assert report["gradient_comparison"][1]["same_sign"] is True
     assert "judge-sensitive" in report["interpretation"]
+
+
+def test_score_distribution_diagnostics_flags_ceiling_with_issues():
+    scores = [
+        make_score("perfect-clean", "immigration_briefing", "assistant", "qwen3:8b", {dim: 1.0 for dim in ("U", "E", "V", "C", "D", "M")}),
+        make_score(
+            "perfect-issues",
+            "immigration_briefing",
+            "assistant",
+            "qwen3:8b",
+            {dim: 1.0 for dim in ("U", "E", "V", "C", "D", "M")},
+        ).model_copy(update={"issues": ["too short"]}),
+        make_score("mixed", "immigration_briefing", "assistant", "qwen3:8b", {dim: 0.5 for dim in ("U", "E", "V", "C", "D", "M")}),
+    ]
+
+    out = score_distribution_diagnostics(scores)["overall"]
+
+    assert out["by_dimension"]["U"]["ceiling_rate"] == 0.6667
+    assert out["all_perfect_rate"] == 0.6667
+    assert out["all_perfect_with_issues_rate"] == 0.3333
+
+
+def test_role_profile_design_reports_non_monotone_expected_profiles():
+    roles = load_role_cards(ROOT / "data/role_cards.yml").by_id
+
+    out = role_profile_design(roles)
+
+    by_dim = {row["dim"]: row for row in out["by_dimension"]}
+    assert by_dim["U"]["expected_agency_correlation"] < 0
+    assert by_dim["C"]["expected_agency_correlation"] > 0
+
+
+def test_analyze_scores_includes_refusal_mediation_and_design_diagnostics():
+    config = load_config(ROOT / "configs/publication_pilot.yml")
+    prompts = load_prompts(ROOT / config.prompts_path)
+    roles = load_role_cards(ROOT / config.role_cards_path)
+    scores = [
+        make_score(f"{model}:{role}", "immigration_briefing", role, model, {dim: 0.8 for dim in ("U", "E", "V", "C", "D", "M")})
+        for model in ("m1", "m2")
+        for role in ("assistant", "advocate", "researcher", "mediator")
+    ]
+    scores[0] = scores[0].model_copy(update={"refusal": True})
+
+    analysis = analyze_scores(scores, prompts, roles.by_id)
+
+    assert analysis["refusal_mediation"]["available"] is True
+    assert analysis["refusal_mediation"]["n_non_refusal"] == len(scores) - 1
+    assert analysis["score_distribution_diagnostics"]["overall"]["n"] == len(scores)
+    assert analysis["role_profile_design"]["by_dimension"]
+
+
+def test_judge_score_agreement_reports_deltas_and_examples():
+    baseline = make_score(
+        "item",
+        "immigration_briefing",
+        "assistant",
+        "m1",
+        {"U": 1.0, "E": 1.0, "V": 1.0, "C": 1.0, "D": 1.0, "M": 1.0},
+    ).model_copy(update={"issues": ["too generic"]})
+    sensitivity = make_score(
+        "item",
+        "immigration_briefing",
+        "assistant",
+        "m1",
+        {"U": 0.0, "E": 0.25, "V": 0.0, "C": 0.25, "D": 0.0, "M": 0.25},
+        refusal=True,
+    ).model_copy(update={"judge_model": "xai:grok-4.3"})
+
+    out = judge_score_agreement([baseline], [sensitivity])
+
+    assert out["available"] is True
+    assert out["refusal_mismatch_count"] == 1
+    assert out["by_dimension"]["U"]["mean_abs_delta"] == 1.0
+    assert out["top_disagreements"][0]["selection_reasons"] == ["refusal mismatch", "baseline ceiling with issues"]

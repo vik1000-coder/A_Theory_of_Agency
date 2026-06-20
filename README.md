@@ -4,8 +4,13 @@ Local research harness for Agency-Dependent Fairness Evaluation (ADFE).
 
 The harness runs role-counterfactual political AI evaluations against local Ollama models,
 scores outputs on the six Agency-Dependent Fairness dimensions with an LLM judge that is
-first **validated against human-labeled datasets**, and tests the agency-gradient hypothesis
-with a mixed-effects model alongside paired-viewpoint asymmetry metrics.
+first **validated against human-labeled datasets**, and tests whether role-conditioned behavior
+survives artifact-integrity gates, judge-sensitivity checks, refusal-mediation diagnostics, and
+paired-viewpoint asymmetry tests.
+
+The practical utility is not just "another benchmark." ADFE is a release-gate pattern for civic AI:
+version the role prompt, freeze the run config, test mirrored lawful viewpoints, validate the judge,
+compare judges, and keep the artifacts needed for later governance or model-risk review.
 
 **Public site:** https://vik1000-coder.github.io/A_Theory_of_Agency/ — problem, data, judge
 validation, judge sensitivity, and findings (regenerated from run artifacts; see [`docs/UPDATING.md`](docs/UPDATING.md)).
@@ -44,9 +49,9 @@ own effect. The current invariants:
   `run_meta.json`. Never cite numbers from a contaminated run.
 - **Blinded role inference.** Role inference is a separate judge pass with the assigned role
   hidden (`blind_role_inference`), so it is not circular.
-- **Non-circular headline.** The primary outcome is the mixed-effects agency gradient
-  (`score ~ agency_level + (1|model)`) plus raw dimension means; role-fit (distance from
-  hand-written bands) is reported as secondary only.
+- **Non-circular diagnostics.** The mixed-effects agency gradient (`score ~ agency_level + (1|model)`)
+  is reported with raw dimension means, refusal-mediation slopes, score-distribution diagnostics,
+  and role-card design checks. Role-fit (distance from hand-written bands) is descriptive only.
 - **Validated judge.** Run `validate-judge` (below) before trusting judge scores.
 - **Judge sensitivity.** Re-judge completed runs with an alternate judge before treating
   slope directions as robust.
@@ -95,7 +100,66 @@ XAI_API_KEY=... uv run python -m adfe_runner judge-sensitivity \
 
 Current result: Grok judged all 2,100 clean-run outputs with no duplicate or malformed score
 rows, but agreed with the `qwen3:8b` slope direction on only **1/6** dimensions. Treat the
-agency-gradient headline as judge-sensitive until human-rated calibration resolves the gap.
+agency-gradient headline as judge-sensitive until human-rated calibration resolves the gap. The
+most compelling current results are the artifact-integrity story, the Qwen/Grok judge disagreement,
+the refusal-mediated collapse of most Qwen slopes after excluding refusals, and the paired-refusal
+checks that catch one-sided refusal across lawful mirrored viewpoints.
+
+The old all-positive agency-gradient result is still visible for reproducibility, but it is
+**provisional**: it should not be cited as a stable empirical law without human calibration.
+After controlling for refusal and output length, Qwen's agency slopes are no longer significant;
+under Grok they are significantly negative across all six dimensions.
+
+## V2 redesign: refusal, non-refusal quality, role profiles
+
+The next citable design is v2. It keeps the current role cards frozen, but changes the outcomes:
+
+- **Refusal is its own outcome.** Refusal rate, warranted refusal, over-refusal, and paired
+  refusal-parity gaps are reported directly.
+- **Quality is analyzed only among non-refusals.** Refused outputs are excluded from quality
+  claims instead of becoming hidden zero-quality rows.
+- **Role-profile matching replaces the single monotone slope as the main role outcome.** v2
+  reports fit to the role-card profile, interval support, RMSE to expected midpoints, and
+  role-confusion diagnostics.
+- **Grok is primary, Qwen is sampled sensitivity.** `xai:grok-4.3` is the primary v2 judge for
+  the local citable arm. `qwen3:8b` is used on a deterministic stratified sensitivity sample,
+  balanced by model, role, agency mode, prompt pair, and Grok-primary refusal status, then
+  reported with post-stratified estimates. Grok frontier runs are explicitly exploratory because
+  Grok is also the judge provider.
+
+Run the local v2 arm:
+
+```bash
+XAI_API_KEY=... uv run python -m adfe_runner iterate-v2 \
+  --config configs/v2_clean_local_grok.yml --cycles 1 --batch-size all \
+  --run-id adfe_v2_clean_local_grok --workers 4
+
+uv run python -m adfe_runner audit-v2 \
+  --config configs/v2_clean_local_grok.yml --run-id adfe_v2_clean_local_grok \
+  --expect-full
+
+uv run python -m adfe_runner judge-sensitivity-v2 \
+  --config configs/v2_clean_local_grok.yml --run-id adfe_v2_clean_local_grok \
+  --judge qwen3:8b --sample-strategy stratified --sample-size 300 \
+  --sample-seed 20260620 --artifact-name qwen3_8b_stratified_300 \
+  --workers 8 --score-json-retry 2
+
+uv run python -m adfe_runner export-ratings-v2 \
+  --config configs/v2_clean_local_grok.yml --run-id adfe_v2_clean_local_grok \
+  --max-items 120
+```
+
+Old derived v2 site/results snapshots are archived under `archives/` before regenerating the
+current public figures. The earlier partial `v2/qwen3_8b` scores are kept only for provenance;
+the public v2 sensitivity evidence uses the explicit `qwen3_8b_stratified_300` artifact.
+
+Run the exploratory frontier arm separately:
+
+```bash
+XAI_API_KEY=... uv run python -m adfe_runner iterate-v2 \
+  --config configs/v2_frontier_grok_exploratory.yml --cycles 1 --batch-size all \
+  --run-id adfe_v2_frontier_grok_exploratory --workers 4
+```
 
 ## Running a study
 
@@ -141,9 +205,13 @@ have raters, you can additionally collect human ratings:
 
 ```bash
 uv run python -m adfe_runner export-ratings --run-id <run_id> --strategy targeted-agency --max-items 120
+uv run python -m adfe_runner export-ratings --run-id <run_id> --strategy judge-disagreement --max-items 120
 uv run python -m adfe_runner import-ratings --run-id <run_id> --ratings path/to/ratings.csv
 uv run python -m adfe_runner analyze --run-id <run_id> --with-human-calibration
 ```
+
+`judge-disagreement` is the recommended next packet: it targets Qwen/Grok disagreements,
+refusal-mediated cases, ceiling-with-issues rows, and low-disagreement controls.
 
 > Legacy configs (`publication_pilot.yml`, `agency_effect_explicit.yml`,
 > `refusal_asymmetry_replication.yml`, `public_essay_replication.yml`) predate the methodology

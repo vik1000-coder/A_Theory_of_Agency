@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 278" role="img" aria-label="Local v2 refusal by model">
+<style>
+.bg{fill:#fff} .ink{fill:#11151c} .muted{fill:#5b6470} .grid{stroke:#d9dee7} .axis{stroke:#8b95a1}
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){.bg{fill:#161b22} .ink{fill:#e9edf3} .muted{fill:#9aa4b1} .grid{stroke:#303844} .axis{stroke:#717b88}}
+</style>
+<rect class="bg" x="0" y="0" width="920" height="278" rx="10"/>
+<text class="ink" x="24" y="30" font-size="18" font-weight="700">Local v2 refusal by model</text>
+<text class="muted" x="24" y="52" font-size="13">DeepSeek is the refusal outlier; most refusals are over-refusals under Grok-primary scoring.</text>
+<line class="axis" x1="190" y1="66" x2="190" y2="244" stroke-width="1"/>
+<line class="grid" x1="790" y1="66" x2="790" y2="244" stroke-width="1"/>
+<text class="ink mono" x="24" y="89" font-size="12">deepseek 1.5b</text>
+<rect x="190" y="77" width="600.0" height="10" rx="3" fill="#2f4fd8"/>
+<rect x="190" y="90" width="589.6" height="10" rx="3" fill="#cc6f47"/>
+<text class="muted mono" x="802" y="89" font-size="12">41.4% / 40.7%</text>
+<text class="ink mono" x="24" y="123" font-size="12">llama 1b</text>
+<rect x="190" y="111" width="227.5" height="10" rx="3" fill="#2f4fd8"/>
+<rect x="190" y="124" width="203.5" height="10" rx="3" fill="#cc6f47"/>
+<text class="muted mono" x="802" y="123" font-size="12">15.7% / 14.1%</text>
+<text class="ink mono" x="24" y="157" font-size="12">llama 3b</text>
+<rect x="190" y="145" width="79.4" height="10" rx="3" fill="#2f4fd8"/>
+<rect x="190" y="158" width="72.4" height="10" rx="3" fill="#cc6f47"/>
+<text class="muted mono" x="802" y="157" font-size="12">5.5% / 5.0%</text>
+<text class="ink mono" x="24" y="191" font-size="12">gemma3:1b</text>
+<rect x="190" y="179" width="75.9" height="10" rx="3" fill="#2f4fd8"/>
+<rect x="190" y="192" width="62.1" height="10" rx="3" fill="#cc6f47"/>
+<text class="muted mono" x="802" y="191" font-size="12">5.2% / 4.3%</text>
+<text class="ink mono" x="24" y="225" font-size="12">phi3:mini</text>
+<rect x="190" y="213" width="51.7" height="10" rx="3" fill="#2f4fd8"/>
+<rect x="190" y="226" width="20.7" height="10" rx="3" fill="#cc6f47"/>
+<text class="muted mono" x="802" y="225" font-size="12">3.6% / 1.4%</text>
+<rect x="190" y="258" width="10" height="10" rx="2" fill="#2f4fd8"/>
+<text class="muted" x="205" y="267" font-size="12">refusal</text>
+<rect x="310" y="258" width="10" height="10" rx="2" fill="#cc6f47"/>
+<text class="muted" x="325" y="267" font-size="12">over-refusal</text>
+</svg>

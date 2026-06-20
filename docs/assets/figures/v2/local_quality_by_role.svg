@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 362" role="img" aria-label="Non-refusal quality by role">
+<style>
+.bg{fill:#fff} .ink{fill:#11151c} .muted{fill:#5b6470} .grid{stroke:#d9dee7} .axis{stroke:#8b95a1}
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){.bg{fill:#161b22} .ink{fill:#e9edf3} .muted{fill:#9aa4b1} .grid{stroke:#303844} .axis{stroke:#717b88}}
+</style>
+<rect class="bg" x="0" y="0" width="920" height="362" rx="10"/>
+<text class="ink" x="24" y="30" font-size="18" font-weight="700">Non-refusal quality by role</text>
+<text class="muted" x="24" y="52" font-size="13">Refused outputs are excluded; darker cells are higher Grok-primary quality scores.</text>
+<text class="muted mono" x="206.0" y="72" text-anchor="middle" font-size="12">U</text>
+<text class="muted mono" x="288.0" y="72" text-anchor="middle" font-size="12">E</text>
+<text class="muted mono" x="370.0" y="72" text-anchor="middle" font-size="12">V</text>
+<text class="muted mono" x="452.0" y="72" text-anchor="middle" font-size="12">C</text>
+<text class="muted mono" x="534.0" y="72" text-anchor="middle" font-size="12">D</text>
+<text class="muted mono" x="616.0" y="72" text-anchor="middle" font-size="12">M</text>
+<text class="ink mono" x="24" y="110" font-size="12">advocate</text>
+<rect x="165" y="88" width="78" height="30" rx="5" fill="rgba(47,79,216,0.627)"/>
+<text class="ink mono" x="206.0" y="108" text-anchor="middle" font-size="12">0.7</text>
+<rect x="247" y="88" width="78" height="30" rx="5" fill="rgba(47,79,216,0.638)"/>
+<text class="ink mono" x="288.0" y="108" text-anchor="middle" font-size="12">0.71</text>
+<rect x="329" y="88" width="78" height="30" rx="5" fill="rgba(47,79,216,0.671)"/>
+<text class="ink mono" x="370.0" y="108" text-anchor="middle" font-size="12">0.75</text>
+<rect x="411" y="88" width="78" height="30" rx="5" fill="rgba(47,79,216,0.521)"/>
+<text class="ink mono" x="452.0" y="108" text-anchor="middle" font-size="12">0.58</text>
+<rect x="493" y="88" width="78" height="30" rx="5" fill="rgba(47,79,216,0.523)"/>
+<text class="ink mono" x="534.0" y="108" text-anchor="middle" font-size="12">0.58</text>
+<rect x="575" y="88" width="78" height="30" rx="5" fill="rgba(47,79,216,0.850)"/>
+<text class="ink mono" x="616.0" y="108" text-anchor="middle" font-size="12">0.94</text>
+<text class="ink mono" x="24" y="144" font-size="12">assistant</text>
+<rect x="165" y="122" width="78" height="30" rx="5" fill="rgba(47,79,216,0.787)"/>
+<text class="ink mono" x="206.0" y="142" text-anchor="middle" font-size="12">0.87</text>
+<rect x="247" y="122" width="78" height="30" rx="5" fill="rgba(47,79,216,0.668)"/>
+<text class="ink mono" x="288.0" y="142" text-anchor="middle" font-size="12">0.74</text>
+<rect x="329" y="122" width="78" height="30" rx="5" fill="rgba(47,79,216,0.747)"/>
+<text class="ink mono" x="370.0" y="142" text-anchor="middle" font-size="12">0.83</text>
+<rect x="411" y="122" width="78" height="30" rx="5" fill="rgba(47,79,216,0.570)"/>
+<text class="ink mono" x="452.0" y="142" text-anchor="middle" font-size="12">0.63</text>
+<rect x="493" y="122" width="78" height="30" rx="5" fill="rgba(47,79,216,0.513)"/>
+<text class="ink mono" x="534.0" y="142" text-anchor="middle" font-size="12">0.57</text>
+<rect x="575" y="122" width="78" height="30" rx="5" fill="rgba(47,79,216,0.860)"/>
+<text class="ink mono" x="616.0" y="142" text-anchor="middle" font-size="12">0.98</text>
+<text class="ink mono" x="24" y="178" font-size="12">campaign_aide</text>
+<rect x="165" y="156" width="78" height="30" rx="5" fill="rgba(47,79,216,0.697)"/>
+<text class="ink mono" x="206.0" y="176" text-anchor="middle" font-size="12">0.77</text>
+<rect x="247" y="156" width="78" height="30" rx="5" fill="rgba(47,79,216,0.704)"/>
+<text class="ink mono" x="288.0" y="176" text-anchor="middle" font-size="12">0.78</text>
+<rect x="329" y="156" width="78" height="30" rx="5" fill="rgba(47,79,216,0.718)"/>
+<text class="ink mono" x="370.0" y="176" text-anchor="middle" font-size="12">0.8</text>
+<rect x="411" y="156" width="78" height="30" rx="5" fill="rgba(47,79,216,0.583)"/>
+<text class="ink mono" x="452.0" y="176" text-anchor="middle" font-size="12">0.65</text>
+<rect x="493" y="156" width="78" height="30" rx="5" fill="rgba(47,79,216,0.540)"/>
+<text class="ink mono" x="534.0" y="176" text-anchor="middle" font-size="12">0.6</text>
+<rect x="575" y="156" width="78" height="30" rx="5" fill="rgba(47,79,216,0.860)"/>
+<text class="ink mono" x="616.0" y="176" text-anchor="middle" font-size="12">0.98</text>
+<text class="ink mono" x="24" y="212" font-size="12">government_info</text>
+<rect x="165" y="190" width="78" height="30" rx="5" fill="rgba(47,79,216,0.650)"/>
+<text class="ink mono" x="206.0" y="210" text-anchor="middle" font-size="12">0.72</text>
+<rect x="247" y="190" width="78" height="30" rx="5" fill="rgba(47,79,216,0.694)"/>
+<text class="ink mono" x="288.0" y="210" text-anchor="middle" font-size="12">0.77</text>
+<rect x="329" y="190" width="78" height="30" rx="5" fill="rgba(47,79,216,0.700)"/>
+<text class="ink mono" x="370.0" y="210" text-anchor="middle" font-size="12">0.78</text>
+<rect x="411" y="190" width="78" height="30" rx="5" fill="rgba(47,79,216,0.658)"/>
+<text class="ink mono" x="452.0" y="210" text-anchor="middle" font-size="12">0.73</text>
+<rect x="493" y="190" width="78" height="30" rx="5" fill="rgba(47,79,216,0.636)"/>
+<text class="ink mono" x="534.0" y="210" text-anchor="middle" font-size="12">0.71</text>
+<rect x="575" y="190" width="78" height="30" rx="5" fill="rgba(47,79,216,0.860)"/>
+<text class="ink mono" x="616.0" y="210" text-anchor="middle" font-size="12">0.96</text>
+<text class="ink mono" x="24" y="246" font-size="12">mediator</text>
+<rect x="165" y="224" width="78" height="30" rx="5" fill="rgba(47,79,216,0.553)"/>
+<text class="ink mono" x="206.0" y="244" text-anchor="middle" font-size="12">0.61</text>
+<rect x="247" y="224" width="78" height="30" rx="5" fill="rgba(47,79,216,0.652)"/>
+<text class="ink mono" x="288.0" y="244" text-anchor="middle" font-size="12">0.72</text>
+<rect x="329" y="224" width="78" height="30" rx="5" fill="rgba(47,79,216,0.538)"/>
+<text class="ink mono" x="370.0" y="244" text-anchor="middle" font-size="12">0.6</text>
+<rect x="411" y="224" width="78" height="30" rx="5" fill="rgba(47,79,216,0.558)"/>
+<text class="ink mono" x="452.0" y="244" text-anchor="middle" font-size="12">0.62</text>
+<rect x="493" y="224" width="78" height="30" rx="5" fill="rgba(47,79,216,0.493)"/>
+<text class="ink mono" x="534.0" y="244" text-anchor="middle" font-size="12">0.55</text>
+<rect x="575" y="224" width="78" height="30" rx="5" fill="rgba(47,79,216,0.846)"/>
+<text class="ink mono" x="616.0" y="244" text-anchor="middle" font-size="12">0.94</text>
+<text class="ink mono" x="24" y="280" font-size="12">news_provider</text>
+<rect x="165" y="258" width="78" height="30" rx="5" fill="rgba(47,79,216,0.577)"/>
+<text class="ink mono" x="206.0" y="278" text-anchor="middle" font-size="12">0.64</text>
+<rect x="247" y="258" width="78" height="30" rx="5" fill="rgba(47,79,216,0.550)"/>
+<text class="ink mono" x="288.0" y="278" text-anchor="middle" font-size="12">0.61</text>
+<rect x="329" y="258" width="78" height="30" rx="5" fill="rgba(47,79,216,0.599)"/>
+<text class="ink mono" x="370.0" y="278" text-anchor="middle" font-size="12">0.67</text>
+<rect x="411" y="258" width="78" height="30" rx="5" fill="rgba(47,79,216,0.512)"/>
+<text class="ink mono" x="452.0" y="278" text-anchor="middle" font-size="12">0.57</text>
+<rect x="493" y="258" width="78" height="30" rx="5" fill="rgba(47,79,216,0.566)"/>
+<text class="ink mono" x="534.0" y="278" text-anchor="middle" font-size="12">0.63</text>
+<rect x="575" y="258" width="78" height="30" rx="5" fill="rgba(47,79,216,0.831)"/>
+<text class="ink mono" x="616.0" y="278" text-anchor="middle" font-size="12">0.92</text>
+<text class="ink mono" x="24" y="314" font-size="12">researcher</text>
+<rect x="165" y="292" width="78" height="30" rx="5" fill="rgba(47,79,216,0.611)"/>
+<text class="ink mono" x="206.0" y="312" text-anchor="middle" font-size="12">0.68</text>
+<rect x="247" y="292" width="78" height="30" rx="5" fill="rgba(47,79,216,0.582)"/>
+<text class="ink mono" x="288.0" y="312" text-anchor="middle" font-size="12">0.65</text>
+<rect x="329" y="292" width="78" height="30" rx="5" fill="rgba(47,79,216,0.625)"/>
+<text class="ink mono" x="370.0" y="312" text-anchor="middle" font-size="12">0.69</text>
+<rect x="411" y="292" width="78" height="30" rx="5" fill="rgba(47,79,216,0.542)"/>
+<text class="ink mono" x="452.0" y="312" text-anchor="middle" font-size="12">0.6</text>
+<rect x="493" y="292" width="78" height="30" rx="5" fill="rgba(47,79,216,0.504)"/>
+<text class="ink mono" x="534.0" y="312" text-anchor="middle" font-size="12">0.56</text>
+<rect x="575" y="292" width="78" height="30" rx="5" fill="rgba(47,79,216,0.851)"/>
+<text class="ink mono" x="616.0" y="312" text-anchor="middle" font-size="12">0.95</text>
+</svg>

@@ -94,10 +94,6 @@
   .dim:last-child{border-bottom:0}
   .dim .key{font-family:var(--mono);font-weight:700;color:var(--accent);min-width:22px}
   .figure{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
-  .figure-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px}
-  .figure-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:13px}
-  .figure-card img{display:block;width:100%;height:auto;border-radius:8px}
-  .figure-card b{display:block;font-size:14.5px;margin:8px 0 3px}
   .caption{font-size:13.2px;color:var(--muted);margin-top:10px}
   .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:8px}
   .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:middle}
@@ -241,7 +237,7 @@
   <h3>Audited population</h3>
   <p id="audited" class="sub"></p>
   <div class="callout good">
-    <strong>Current artifact integrity:</strong> the clean local v2 run has 2,100 successful generations and 2,100 Grok-primary v2 scores; the Qwen sensitivity check is a stratified 300-row sample with post-stratified estimates; the frontier v2 arm has 630 Grok-primary scores and is labeled exploratory. Full v2 generation and primary-score artifacts are audited before publication.
+    <strong>Current artifact integrity:</strong> the clean local run has 2,100 successful generations and 2,100 primary scores; the Grok sensitivity pass adds 2,100 alternate judge scores; the Grok frontier run has 630 and 630. The two main runs pass full-factorial `audit-run --expect-full`.
   </div>
 </div></section>
 
@@ -279,10 +275,6 @@
   <p id="v2-summary" class="sub"></p>
   <div class="grid cards" id="v2-cards"></div>
 
-  <h3>Updated v2 figures</h3>
-  <p class="sub">These figures are generated from the current v2 artifacts during `build-site`, so the page and data file stay pinned to the same run.</p>
-  <div class="figure-gallery" id="v2-figure-gallery"></div>
-
   <h3>V2 refusal outcomes</h3>
   <p class="sub">Refusal is now measured directly, including one-sided refusal across mirrored lawful viewpoint pairs.</p>
   <table id="v2-refusal-model"><thead><tr><th>Model</th><th class="num">Refusal rate</th><th class="num">Over-refusal rate</th><th class="num">n</th></tr></thead><tbody></tbody></table>
@@ -295,17 +287,9 @@
   <p class="sub">The role outcome is profile fit: do the non-refusal outputs land near the role-card expectations, and which role intervals are supported?</p>
   <table id="v2-profile-role"><thead><tr><th>Role</th><th class="num">Profile fit</th><th class="num">RMSE to expected midpoint</th><th class="num">Intervals supported</th><th class="num">n non-refusal</th></tr></thead><tbody></tbody></table>
 
-  <h3>V2 statistical checks</h3>
-  <p class="sub">Intervals are Wilson 95% confidence intervals for headline proportions. They are descriptive for the exploratory frontier arm and not used to pool local and frontier evidence.</p>
-  <table id="v2-stats"><thead><tr><th>Estimate</th><th class="num">Count</th><th class="num">Rate</th><th class="num">95% CI</th><th>Interpretation</th></tr></thead><tbody></tbody></table>
-
   <h3>V2 judge robustness</h3>
   <p id="v2-judge-robustness" class="sub"></p>
   <table id="v2-disagreements"><thead><tr><th>Item</th><th>Context</th><th>Refusal</th><th class="num">Quality delta</th><th class="num">Profile delta</th></tr></thead><tbody></tbody></table>
-
-  <h3>V2 frontier exploratory arm</h3>
-  <p id="v2-frontier-summary" class="sub"></p>
-  <table id="v2-frontier-model"><thead><tr><th>Model</th><th class="num">Refusal rate</th><th class="num">Over-refusal rate</th><th class="num">n</th></tr></thead><tbody></tbody></table>
 </div></section>
 
 <section id="findings"><div class="wrap">
@@ -444,15 +428,13 @@ XAI_API_KEY=... uv run python -m adfe_runner judge-sensitivity \
 # rebuild this site, pinned to the run
 uv run python -m adfe_runner build-site --run-id adfe_clean_local_main
 
-# v2 redesign: Grok-primary scoring, stratified Qwen sensitivity
+# v2 redesign: Grok-primary scoring, Qwen sensitivity
 XAI_API_KEY=... uv run python -m adfe_runner iterate-v2 \
   --config configs/v2_clean_local_grok.yml --cycles 1 --batch-size all \
   --run-id adfe_v2_clean_local_grok --workers 4
 uv run python -m adfe_runner judge-sensitivity-v2 \
   --config configs/v2_clean_local_grok.yml --run-id adfe_v2_clean_local_grok \
-  --judge qwen3:8b --sample-strategy stratified --sample-size 300 \
-  --sample-seed 20260620 --artifact-name qwen3_8b_stratified_300 \
-  --workers 8 --score-json-retry 2
+  --judge qwen3:8b --workers 4
 uv run python -m adfe_runner audit-v2 \
   --config configs/v2_clean_local_grok.yml --run-id adfe_v2_clean_local_grok \
   --expect-full</pre>
@@ -597,7 +579,6 @@ uv run python -m adfe_runner audit-v2 \
     var v2o=v2.overall||{};
     var v2paired=v2.paired_refusal||{};
     var v2rob=v2.judge_robustness||{};
-    var v2front=D.v2_frontier||{};
     $("v2-summary").innerHTML =
       "Primary v2 judge: <b>"+esc(fx(v2.judge_model))+"</b>. "+
       "Rows are split into refusal outcomes and <b>"+esc(fx(v2o.n_non_refusal,0))+"</b> non-refusal rows for quality claims.";
@@ -611,17 +592,10 @@ uv run python -m adfe_runner audit-v2 \
       ["Over-refusal", pct(v2o.over_refusal_rate)],
       ["One-sided pairs", pct(v2paired.one_sided_refusal_rate)],
       ["Quality rows", fx(v2o.n_non_refusal)],
-      ["Qwen sample rows", fx(v2rob.n_common)]
+      ["Judge refusal agree", pct(v2rob.refusal_agreement_rate)]
     ];
     $("v2-cards").innerHTML=v2cards.map(function(c){
       return '<div class="card"><div class="k">'+esc(c[1])+'</div><div class="l">'+esc(c[0])+'</div></div>';}).join("");
-    var figs=((D.figures||{}).v2)||[];
-    if($("v2-figure-gallery")){
-      $("v2-figure-gallery").innerHTML=figs.map(function(fig){
-        return '<div class="figure-card"><img src="'+esc(fig.path)+'" alt="'+esc(fig.title)+'">'+
-          '<b>'+esc(fig.title)+'</b><div class="caption">'+esc(fig.caption||"")+'</div></div>';
-      }).join("") || '<p class="sub">No generated v2 figures available.</p>';
-    }
     var v2rm=document.querySelector("#v2-refusal-model tbody");
     if(v2rm) v2rm.innerHTML=(v2.refusal_by_model||[]).map(function(row){
       return '<tr><td><code>'+esc(row.model)+'</code></td><td class="num">'+esc(pct(row.refusal_rate))+
@@ -639,24 +613,11 @@ uv run python -m adfe_runner audit-v2 \
         esc(fx(row.interval_supported,0))+'/'+esc(fx((row.interval_supported||0)+(row.interval_violated||0),0))+
         '</td><td class="num">'+esc(fx(row.n_non_refusal))+'</td></tr>';
     }).join("");
-    var v2stats=document.querySelector("#v2-stats tbody");
-    if(v2stats) v2stats.innerHTML=(v2.statistical_checks||[]).map(function(row){
-      var ci=(row.ci_low==null)?"-":"["+pct(row.ci_low)+", "+pct(row.ci_high)+"]";
-      return '<tr><td>'+esc(row.label)+'</td><td class="num">'+esc(fx(row.successes,0))+'/'+esc(fx(row.n,0))+
-        '</td><td class="num">'+esc(pct(row.rate))+'</td><td class="num">'+esc(ci)+'</td><td>'+esc(row.note||"")+'</td></tr>';
-    }).join("");
     if(v2rob.available){
-      var sample=v2rob.sample||{}, post=v2rob.poststratified||{}, boot=v2rob.bootstrap_intervals||{};
-      var balance=((sample.sample_counts||{}).primary_refusal)||{};
-      var ci=(boot.refusal_mismatch_rate||{});
       $("v2-judge-robustness").innerHTML =
-        "Primary versus sensitivity judge on a stratified sample: <b>"+esc(fx(v2rob.n_common))+"</b> rows, "+
-        "balanced as "+esc(fx(balance.true,0))+" Grok-primary refusals and "+esc(fx(balance.false,0))+" non-refusals. "+
-        "Raw refusal agreement is <b>"+esc(pct(v2rob.refusal_agreement_rate))+"</b>; post-stratified refusal mismatch is <b>"+
-        esc(pct(post.refusal_mismatch_rate))+"</b>. "+
-        "Non-refusal quality mean absolute delta is <b>"+esc(num(v2rob.quality_mean_abs_delta_non_refusal_both))+
-        "</b>, role-profile delta is <b>"+esc(num(v2rob.role_profile_mean_abs_delta))+"</b>. "+
-        (ci.ci_low!=null ? "Bootstrap refusal-mismatch interval: ["+esc(pct(ci.ci_low))+", "+esc(pct(ci.ci_high))+"]." : "");
+        "Primary versus sensitivity judge: refusal agreement <b>"+esc(pct(v2rob.refusal_agreement_rate))+
+        "</b>, non-refusal quality mean absolute delta <b>"+esc(num(v2rob.quality_mean_abs_delta_non_refusal_both))+
+        "</b>, role-profile delta <b>"+esc(num(v2rob.role_profile_mean_abs_delta))+"</b>.";
       var v2d=document.querySelector("#v2-disagreements tbody");
       if(v2d) v2d.innerHTML=(v2rob.top_disagreements||[]).slice(0,8).map(function(row){
         return '<tr><td><code>'+esc(row.item_id)+'</code></td><td class="sub">'+esc(row.model)+' · '+esc(row.role)+' · '+esc(row.prompt_id)+
@@ -666,30 +627,12 @@ uv run python -m adfe_runner audit-v2 \
     } else {
       $("v2-judge-robustness").textContent = "No v2 sensitivity judge artifact has been generated yet.";
     }
-    if(v2front.available){
-      var fo=v2front.overall||{}, fp=v2front.paired_refusal||{};
-      $("v2-frontier-summary").innerHTML =
-        "Exploratory frontier arm: <b>"+esc(fx(fo.n_scores))+"</b> Grok-family outputs scored by <b>"+
-        esc(fx(v2front.judge_model))+"</b>. Because the judge provider also generated the audited outputs, this arm is not pooled with the citable local result. "+
-        "Refusal rate is <b>"+esc(pct(fo.refusal_rate))+"</b>, one-sided pair rate is <b>"+esc(pct(fp.one_sided_refusal_rate))+"</b>.";
-      var vf=document.querySelector("#v2-frontier-model tbody");
-      if(vf) vf.innerHTML=(v2front.refusal_by_model||[]).map(function(row){
-        return '<tr><td><code>'+esc(row.model)+'</code></td><td class="num">'+esc(pct(row.refusal_rate))+
-          '</td><td class="num">'+esc(pct(row.over_refusal_rate))+'</td><td class="num">'+esc(fx(row.n))+'</td></tr>';
-      }).join("");
-    } else {
-      if($("v2-frontier-summary")) $("v2-frontier-summary").textContent="No v2 frontier artifact is available.";
-    }
   } else {
     var v2sec=document.getElementById('v2'); if(v2sec) v2sec.style.display='none';
   }
 
   var g=D.agency_gradient||{}, gdims=g.by_dimension||[];
   var adims=adjustedGradient.by_dimension||[];
-  var hasLegacyFindings = !!((D.overall||{}).n_scores && g.n);
-  if(!hasLegacyFindings){
-    var findsec=document.getElementById('findings'); if(findsec) findsec.style.display='none';
-  }
   var sigPos = gdims.filter(function(d){return d.significant && d.coef>0;}).length;
   var adjustedSigPos = adims.filter(function(d){return d.significant && d.coef>0;}).length;
   var floorsRise = gdims.some(function(d){return (d.dim==="E"||d.dim==="M") && d.significant && d.coef>0;});
@@ -857,9 +800,7 @@ uv run python -m adfe_runner audit-v2 \
     return '<tr><td class="sub">'+esc(fx(p.pair))+'</td><td class="sub">'+esc(fx(p.model))+' · '+esc(fx(p.role))+' · '+esc(fx(p.agency_mode))+'</td><td class="num">'+esc(num(p.refusal_gap))+'</td><td class="num">'+esc(num(p.quality_gap))+'</td></tr>';}).join("");
 
   var fr=D.frontier||{};
-  if((D.v2||{}).available && (D.v2_frontier||{}).available){
-    var fsec2=document.getElementById('frontier'); if(fsec2) fsec2.style.display='none';
-  } else if(fr.n){
+  if(fr.n){
     $("frontier-meta").innerHTML="Audited "+(fr.models||[]).map(function(m){return '<code>'+esc(m.replace('xai:',''))+'</code>';}).join(", ")+
       " via the xAI API ("+esc(fr.n)+" scored, local judge "+esc(fx(prov.judge_model))+"). Refusal rate: "+esc(pct(fr.refusal_rate))+".";
     var saturated = fr.saturated_dims || [];

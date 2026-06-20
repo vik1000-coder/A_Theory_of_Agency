@@ -112,6 +112,96 @@ def test_export_targeted_rating_packet_includes_refusal_counterpart(tmp_path):
     assert "counterpart" in text
 
 
+def test_export_judge_disagreement_packet_includes_judge_context(tmp_path):
+    config = load_config(ROOT / "configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
+    run_path = tmp_path / "run-disagreement"
+    records = [
+        GenerationRecord(
+            run_id="run-disagreement",
+            cycle=0,
+            item_id="high",
+            model="m1",
+            role="assistant",
+            prompt_id="immigration_briefing",
+            source_packet_id="immigration_2026_static",
+            generation_prompt="prompt",
+            output="A high-disagreement answer.",
+            created_at=now_iso(),
+        ),
+        GenerationRecord(
+            run_id="run-disagreement",
+            cycle=0,
+            item_id="control",
+            model="m1",
+            role="assistant",
+            prompt_id="voting_briefing",
+            source_packet_id="voting_2026_static",
+            generation_prompt="prompt",
+            output="A low-disagreement control answer.",
+            created_at=now_iso(),
+        ),
+    ]
+    primary_scores = [
+        ScoreRecord(
+            run_id="run-disagreement",
+            cycle=0,
+            item_id="high",
+            model="m1",
+            role="assistant",
+            prompt_id="immigration_briefing",
+            source_packet_id="immigration_2026_static",
+            judge_model="qwen3:8b",
+            scores_raw={dim: 4 for dim in ("U", "E", "V", "C", "D", "M")},
+            scores={dim: 1.0 for dim in ("U", "E", "V", "C", "D", "M")},
+            refusal=False,
+            inferred_role="assistant",
+            checks={"word_count": 80, "source_mentions": 1, "caveat_count": 1},
+            issues=["too generic"],
+            created_at=now_iso(),
+        ),
+        ScoreRecord(
+            run_id="run-disagreement",
+            cycle=0,
+            item_id="control",
+            model="m1",
+            role="assistant",
+            prompt_id="voting_briefing",
+            source_packet_id="voting_2026_static",
+            judge_model="qwen3:8b",
+            scores_raw={dim: 3 for dim in ("U", "E", "V", "C", "D", "M")},
+            scores={dim: 0.75 for dim in ("U", "E", "V", "C", "D", "M")},
+            refusal=False,
+            inferred_role="assistant",
+            checks={"word_count": 80, "source_mentions": 1, "caveat_count": 1},
+            created_at=now_iso(),
+        ),
+    ]
+    sensitivity_scores = [
+        primary_scores[0].model_copy(
+            update={
+                "judge_model": "xai:grok-4.3",
+                "scores_raw": {dim: 0 for dim in ("U", "E", "V", "C", "D", "M")},
+                "scores": {dim: 0.0 for dim in ("U", "E", "V", "C", "D", "M")},
+                "refusal": True,
+                "issues": ["refusal"],
+            }
+        ),
+        primary_scores[1].model_copy(update={"judge_model": "xai:grok-4.3"}),
+    ]
+    append_jsonl(run_path / "generations.jsonl", records)
+    append_jsonl(run_path / "scores.jsonl", primary_scores)
+    append_jsonl(run_path / "judge_sensitivity" / "xai_grok-4.3" / "scores.jsonl", sensitivity_scores)
+
+    packet = export_rating_packet(config, "run-disagreement", strategy="judge-disagreement", max_items=2)
+
+    text = packet.read_text(encoding="utf-8")
+    assert "selection_reason" in text
+    assert "primary_scores_json" in text
+    assert "sensitivity_scores_json" in text
+    assert "judge_refusal_mismatch" in text
+    assert "low_disagreement_control" in text
+
+
 def test_import_rating_packet_with_publication_calibration_fields(tmp_path):
     config = load_config(ROOT / "configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
     config_path = tmp_path / "config.yml"

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 316" role="img" aria-label="Role-card design correlations">
+<style>
+.bg{fill:#fff} .ink{fill:#11151c} .muted{fill:#5b6470} .grid{stroke:#d9dee7} .axis{stroke:#8b95a1}
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){.bg{fill:#161b22} .ink{fill:#e9edf3} .muted{fill:#9aa4b1} .grid{stroke:#303844} .axis{stroke:#717b88}}
+</style>
+<rect class="bg" x="0" y="0" width="920" height="316" rx="10"/>
+<text class="ink" x="24" y="30" font-size="18" font-weight="700">Role-card design correlations</text>
+<text class="muted" x="24" y="52" font-size="13">Expected role profiles are not a single monotone agency ladder across all dimensions.</text>
+<line class="axis" x1="445.0" y1="68" x2="445.0" y2="286" stroke-width="1"/>
+<text class="ink mono" x="24" y="91" font-size="12">U</text>
+<rect x="260.5" y="78" width="184.5" height="14" rx="3" fill="#b3261e"/>
+<text class="muted mono" x="686" y="91" font-size="12">-0.82</text>
+<text class="ink mono" x="24" y="125" font-size="12">E</text>
+<rect x="445.0" y="112" width="134.59500000000003" height="14" rx="3" fill="#177245"/>
+<text class="muted mono" x="686" y="125" font-size="12">0.598</text>
+<text class="ink mono" x="24" y="159" font-size="12">V</text>
+<rect x="445.0" y="146" width="83.90250000000003" height="14" rx="3" fill="#177245"/>
+<text class="muted mono" x="686" y="159" font-size="12">0.373</text>
+<text class="ink mono" x="24" y="193" font-size="12">C</text>
+<rect x="445.0" y="180" width="181.5525" height="14" rx="3" fill="#177245"/>
+<text class="muted mono" x="686" y="193" font-size="12">0.807</text>
+<text class="ink mono" x="24" y="227" font-size="12">D</text>
+<rect x="445.0" y="214" width="184.81500000000005" height="14" rx="3" fill="#177245"/>
+<text class="muted mono" x="686" y="227" font-size="12">0.821</text>
+<text class="ink mono" x="24" y="261" font-size="12">M</text>
+<rect x="445.0" y="248" width="57.21750000000003" height="14" rx="3" fill="#177245"/>
+<text class="muted mono" x="686" y="261" font-size="12">0.254</text>
+</svg>

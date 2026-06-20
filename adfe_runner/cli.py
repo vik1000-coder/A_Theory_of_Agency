@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -10,7 +11,13 @@ from typing import Any
 from rich.console import Console
 from rich.table import Table
 
-from .analysis import analyze_scores, observations_markdown
+from .analysis import (
+    analyze_scores,
+    judge_score_agreement,
+    judge_score_delta_rows,
+    observations_markdown,
+    score_distribution_diagnostics,
+)
 from .backends import API_PREFIXES, RoutedClient, parse_model_spec
 from .integrity import audit_run, repair_run, require_unique_item_ids
 from .io import (
@@ -45,9 +52,11 @@ from .schemas import (
     HumanRatingRecord,
     ScoreRecord,
     StudyConfig,
+    V2ScoreRecord,
     now_iso,
 )
-from .scoring import score_generation
+from .scoring import score_generation, score_generation_v2
+from .v2_analysis import analyze_v2_scores, compare_v2_judges, stratified_v2_sample_manifest, v2_observations_markdown
 
 console = Console()
 
@@ -293,6 +302,289 @@ def safe_artifact_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("_")
 
 
+def v2_judge_dir(run_path: Path, judge: str, artifact_name: str | None = None) -> Path:
+    return run_path / "v2" / safe_artifact_name(artifact_name or judge)
+
+
+def v2_score_path(run_path: Path, judge: str, artifact_name: str | None = None) -> Path:
+    return v2_judge_dir(run_path, judge, artifact_name=artifact_name) / "scores.jsonl"
+
+
+def same_provider_exploratory(models: list[str], judge: str) -> bool:
+    judge_provider, _judge_name = parse_model_spec(judge)
+    if judge_provider == "ollama":
+        return False
+    return any(parse_model_spec(model)[0] == judge_provider for model in models)
+
+
+def v2_judge_options() -> dict[str, Any]:
+    return {"temperature": 0.0, "top_p": 0.9, "num_predict": 520}
+
+
+def score_v2_records(
+    config: StudyConfig,
+    prompts: list,
+    roles_file: Any,
+    packets: dict,
+    records: list[GenerationRecord],
+    run_path: Path,
+    judge: str,
+    workers: int = 1,
+    force: bool = False,
+    score_json_retry: int | None = None,
+    artifact_name: str | None = None,
+) -> list[V2ScoreRecord]:
+    require_unique_item_ids(records, "generation")
+    score_path = v2_score_path(run_path, judge, artifact_name=artifact_name)
+    if force and score_path.exists():
+        score_path.unlink()
+    existing_scores = read_jsonl(score_path, V2ScoreRecord)
+    require_unique_item_ids(existing_scores, "v2 score")
+    scored_item_ids = set() if force else {score.item_id for score in existing_scores}
+    pending_records = [record for record in records if record.item_id not in scored_item_ids]
+    prompt_map = {prompt.id: prompt for prompt in prompts}
+    role_ids = [role.id for role in roles_file.roles]
+    state = load_calibration_state(run_path)
+    retry = config.score_json_retry if score_json_retry is None else score_json_retry
+
+    def score_one(record: GenerationRecord) -> V2ScoreRecord:
+        prompt = prompt_map[record.prompt_id]
+        role = roles_file.by_id[record.role]
+        packet = packets[record.source_packet_id]
+        worker_client = RoutedClient(config.ollama_url)
+        return score_generation_v2(
+            record,
+            prompt=prompt,
+            assigned_role=role,
+            role_ids=role_ids,
+            packet=packet,
+            client=worker_client,
+            judge_model=judge,
+            options=v2_judge_options(),
+            judge_addendum=state.active_judge_addendum,
+            score_json_retry=retry,
+        )
+
+    total = len(pending_records)
+    new_scores: list[V2ScoreRecord] = []
+    workers = max(1, workers)
+    if workers == 1:
+        for index, record in enumerate(pending_records, start=1):
+            console.print(
+                f"[dim]V2 score {index}/{total}: judge={judge} model={record.model} "
+                f"role={record.role} mode={record.agency_mode} prompt={record.prompt_id}[/dim]"
+            )
+            score = score_one(record)
+            append_jsonl(score_path, [score])
+            new_scores.append(score)
+    elif pending_records:
+        console.print(f"[dim]V2 scoring {total} pending item(s) with {workers} workers[/dim]")
+        completed = 0
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(score_one, record): record for record in pending_records}
+            for future in as_completed(futures):
+                record = futures[future]
+                score = future.result()
+                append_jsonl(score_path, [score])
+                new_scores.append(score)
+                completed += 1
+                console.print(
+                    f"[dim]V2 score {completed}/{total}: judge={judge} model={record.model} "
+                    f"role={record.role} mode={record.agency_mode} prompt={record.prompt_id}[/dim]"
+                )
+    return new_scores
+
+
+def write_v2_analysis(
+    config: StudyConfig,
+    prompts: list,
+    roles_file: Any,
+    run_path: Path,
+    run_id: str,
+    models: list[str],
+    judge: str,
+    config_path: Path | str,
+) -> dict[str, Any]:
+    scores = read_jsonl(v2_score_path(run_path, judge), V2ScoreRecord)
+    require_unique_item_ids(scores, "v2 score")
+    generations = read_jsonl(run_path / "generations.jsonl", GenerationRecord)
+    generation_ids = {record.item_id for record in generations}
+    missing_scores = sorted(generation_ids - {score.item_id for score in scores})
+    if missing_scores:
+        raise ValueError(f"v2 scoring incomplete: {len(scores)} score(s) for {len(generation_ids)} generation(s)")
+    exploratory = same_provider_exploratory(models, judge)
+    analysis = analyze_v2_scores(scores, prompts, roles_file.by_id, exploratory_same_provider=exploratory)
+    v2_root = run_path / "v2"
+    write_json(v2_root / "analysis.json", analysis)
+    (v2_root / "observations.md").write_text(v2_observations_markdown(analysis), encoding="utf-8")
+    write_json(v2_judge_dir(run_path, judge) / "analysis.json", analysis)
+    write_json(
+        v2_root / "meta.json",
+        {
+            "created_at": now_iso(),
+            "schema": "adfe_v2",
+            "source_run_id": run_id,
+            "source_config_path": str(config_path),
+            "primary_judge": judge,
+            "models": models,
+            "score_json_retry": config.score_json_retry,
+            "exploratory_same_provider": exploratory,
+            "n_generations": len(generations),
+            "n_scores": len(scores),
+        },
+    )
+    return analysis
+
+
+def v2_sensitivity_markdown(report: dict[str, Any]) -> str:
+    sample = report.get("sample", {})
+    post = report.get("poststratified", {})
+    lines = [
+        "# ADFE v2 Judge Sensitivity",
+        "",
+        f"- Primary judge: `{report.get('primary_judge')}`",
+        f"- Sensitivity judge: `{report.get('sensitivity_judge')}`",
+        f"- Overlapping scores: {report.get('n_common')}",
+        f"- Refusal agreement: {report.get('refusal_agreement_rate')}",
+        f"- Non-refusal quality mean absolute delta: {report.get('quality_mean_abs_delta_non_refusal_both')}",
+        f"- Role-profile mean absolute delta: {report.get('role_profile_mean_abs_delta')}",
+    ]
+    if sample.get("available"):
+        lines.extend(
+            [
+                f"- Sample strategy: `{sample.get('strategy')}`",
+                f"- Sample size: {sample.get('sample_size')} of {sample.get('population_size')}",
+            ]
+        )
+    if post.get("available"):
+        lines.extend(
+            [
+                f"- Post-stratified refusal mismatch rate: {post.get('refusal_mismatch_rate')}",
+                f"- Post-stratified sensitivity-minus-primary refusal rate: {post.get('sensitivity_minus_primary_refusal_rate')}",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "## Largest Disagreements",
+            "",
+            "| Item | Context | Refusal mismatch | Quality delta | Profile delta |",
+            "| --- | --- | :---: | ---: | ---: |",
+        ]
+    )
+    for row in report.get("top_disagreements", [])[:12]:
+        lines.append(
+            f"| `{row['item_id']}` | {row['model']} / {row['role']} / {row['prompt_id']} | "
+            f"{'yes' if row.get('refusal_mismatch') else 'no'} | "
+            f"{row.get('quality_mean_abs_delta_non_refusal')} | {row.get('role_profile_mean_abs_delta')} |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def command_judge_sensitivity_v2_sample(
+    args: argparse.Namespace,
+    effective_path: Path,
+    config: StudyConfig,
+    prompts: list,
+    roles_file: Any,
+    packets: dict,
+    path: Path,
+    records: list[GenerationRecord],
+    judge: str,
+) -> int:
+    if args.sample_size is None or args.sample_size <= 0:
+        raise ValueError("--sample-size must be positive when --sample-strategy is used")
+    primary_scores = read_jsonl(v2_score_path(path, config.judge_model), V2ScoreRecord)
+    require_unique_item_ids(primary_scores, "v2 primary score")
+    if len(primary_scores) != len(records):
+        raise ValueError(
+            f"v2 primary scoring incomplete: {len(primary_scores)} score(s) for {len(records)} generation(s)"
+        )
+
+    artifact_name = args.artifact_name or f"{judge}__{args.sample_strategy}_{args.sample_size}"
+    sensitivity_dir = v2_judge_dir(path, judge, artifact_name=artifact_name)
+    manifest_path = sensitivity_dir / "sample_manifest.json"
+    if args.force or not manifest_path.exists():
+        manifest = stratified_v2_sample_manifest(
+            records,
+            primary_scores,
+            prompts,
+            sample_size=args.sample_size,
+            seed=args.sample_seed,
+        )
+        write_json(manifest_path, manifest)
+    else:
+        manifest = read_json(manifest_path)
+
+    sample_ids = manifest.get("sample_item_ids", [])
+    if not sample_ids:
+        raise ValueError("stratified sample manifest has no sample_item_ids")
+    record_by_id = {record.item_id: record for record in records}
+    missing_records = sorted(set(sample_ids) - set(record_by_id))
+    if missing_records:
+        raise ValueError(f"sample manifest references {len(missing_records)} missing generation(s)")
+    sample_records = [record_by_id[item_id] for item_id in sample_ids]
+
+    score_v2_records(
+        config,
+        prompts,
+        roles_file,
+        packets,
+        sample_records,
+        path,
+        judge=judge,
+        workers=args.workers,
+        force=args.force,
+        score_json_retry=args.score_json_retry,
+        artifact_name=artifact_name,
+    )
+    sensitivity_scores = read_jsonl(v2_score_path(path, judge, artifact_name=artifact_name), V2ScoreRecord)
+    require_unique_item_ids(sensitivity_scores, "v2 sampled sensitivity score")
+    sample_id_set = set(sample_ids)
+    sensitivity_scores = [score for score in sensitivity_scores if score.item_id in sample_id_set]
+    score_ids = {score.item_id for score in sensitivity_scores}
+    missing_scores = sorted(sample_id_set - score_ids)
+    if missing_scores:
+        raise ValueError(f"v2 sampled sensitivity incomplete: {len(missing_scores)} sample row(s) missing scores")
+
+    analysis = analyze_v2_scores(
+        sensitivity_scores,
+        prompts,
+        roles_file.by_id,
+        exploratory_same_provider=same_provider_exploratory([record.model for record in sample_records], judge),
+    )
+    write_json(sensitivity_dir / "analysis.json", analysis)
+    (sensitivity_dir / "observations.md").write_text(v2_observations_markdown(analysis), encoding="utf-8")
+    write_json(
+        sensitivity_dir / "meta.json",
+        {
+            "created_at": now_iso(),
+            "schema": "adfe_v2_sampled_sensitivity",
+            "source_run_id": args.run_id,
+            "source_config_path": str(effective_path),
+            "primary_judge": config.judge_model,
+            "sensitivity_judge": judge,
+            "artifact_name": artifact_name,
+            "sample_strategy": args.sample_strategy,
+            "sample_size": len(sample_ids),
+            "score_json_retry": args.score_json_retry if args.score_json_retry is not None else config.score_json_retry,
+            "n_scores": len(sensitivity_scores),
+        },
+    )
+    primary_subset = [score for score in primary_scores if score.item_id in sample_id_set]
+    comparison = compare_v2_judges(primary_subset, sensitivity_scores, sample_records, sample_manifest=manifest)
+    comparison_path = path / "v2" / f"comparison_{safe_artifact_name(artifact_name)}.json"
+    write_json(comparison_path, comparison)
+    (path / "v2" / f"comparison_{safe_artifact_name(artifact_name)}.md").write_text(
+        v2_sensitivity_markdown(comparison), encoding="utf-8"
+    )
+    console.print(f"Wrote v2 sampled sensitivity scores to {v2_score_path(path, judge, artifact_name=artifact_name)}")
+    console.print(f"Wrote sample manifest to {manifest_path}")
+    console.print(f"Wrote v2 sampled comparison to {comparison_path}")
+    return 0
+
+
 def sensitivity_markdown(report: dict[str, Any]) -> str:
     lines = [
         "# Judge Sensitivity Report",
@@ -313,6 +605,25 @@ def sensitivity_markdown(report: dict[str, Any]) -> str:
             f"| {row['dim']} | {row.get('baseline_coef')} | {row.get('sensitivity_coef')} | "
             f"{'yes' if row.get('same_sign') else 'no'} | {row.get('baseline_pvalue')} | {row.get('sensitivity_pvalue')} |"
         )
+    agreement = report.get("judge_score_agreement", {})
+    if agreement.get("available"):
+        lines.extend(
+            [
+                "",
+                "## Score Agreement",
+                "",
+                f"- Overlapping item IDs: {agreement.get('n_common')}",
+                f"- Mean absolute score delta: {agreement.get('overall_mean_abs_delta')}",
+                f"- Refusal mismatches: {agreement.get('refusal_mismatch_count')} "
+                f"({agreement.get('refusal_mismatch_rate')})",
+                "",
+                "| Dim | Mean absolute delta | Max absolute delta |",
+                "| --- | ---: | ---: |",
+            ]
+        )
+        for dim in DIMENSIONS:
+            row = agreement.get("by_dimension", {}).get(dim, {})
+            lines.append(f"| {dim} | {row.get('mean_abs_delta')} | {row.get('max_abs_delta')} |")
     lines.extend(["", "## Interpretation", "", report["interpretation"], ""])
     return "\n".join(lines)
 
@@ -323,11 +634,18 @@ def compare_judge_analyses(
     sensitivity_judge: str,
     baseline: dict[str, Any],
     sensitivity: dict[str, Any],
+    baseline_scores: list[ScoreRecord] | None = None,
+    sensitivity_scores: list[ScoreRecord] | None = None,
+    generations: list[GenerationRecord] | None = None,
 ) -> dict[str, Any]:
     baseline_grad = baseline.get("agency_gradient_mixedlm", {}).get("by_dimension", {})
     sensitivity_grad = sensitivity.get("agency_gradient_mixedlm", {}).get("by_dimension", {})
+    baseline_adjusted = baseline.get("agency_gradient_adjusted", {}).get("by_dimension", {})
+    sensitivity_adjusted = sensitivity.get("agency_gradient_adjusted", {}).get("by_dimension", {})
     rows: list[dict[str, Any]] = []
+    adjusted_rows: list[dict[str, Any]] = []
     same_sign = 0
+    adjusted_same_sign = 0
     for dim in DIMENSIONS:
         b = baseline_grad.get(dim, {})
         s = sensitivity_grad.get(dim, {})
@@ -349,6 +667,28 @@ def compare_judge_analyses(
                 "same_sign": same,
             }
         )
+        ba = baseline_adjusted.get(dim, {})
+        sa = sensitivity_adjusted.get(dim, {})
+        ba_coef = ba.get("agency_level_coef")
+        sa_coef = sa.get("agency_level_coef")
+        adjusted_same = None
+        if ba_coef is not None and sa_coef is not None:
+            adjusted_same = (ba_coef >= 0 and sa_coef >= 0) or (ba_coef < 0 and sa_coef < 0)
+            adjusted_same_sign += int(bool(adjusted_same))
+        adjusted_rows.append(
+            {
+                "dim": dim,
+                "baseline_coef": ba_coef,
+                "sensitivity_coef": sa_coef,
+                "baseline_pvalue": ba.get("agency_level_pvalue"),
+                "sensitivity_pvalue": sa.get("agency_level_pvalue"),
+                "baseline_significant": ba.get("agency_level_significant_0_05"),
+                "sensitivity_significant": sa.get("agency_level_significant_0_05"),
+                "baseline_refusal_coef": ba.get("refusal_coef"),
+                "sensitivity_refusal_coef": sa.get("refusal_coef"),
+                "same_sign": adjusted_same,
+            }
+        )
     baseline_overall = baseline.get("overall", {})
     sensitivity_overall = sensitivity.get("overall", {})
     interpretation = (
@@ -359,19 +699,30 @@ def compare_judge_analyses(
         else "The sensitivity judge does not agree with the baseline judge on every slope direction. "
         "Treat the affected dimensions as judge-sensitive until human-rated calibration resolves the discrepancy."
     )
-    return {
+    report = {
         "run_id": run_id,
         "baseline_judge": baseline_judge,
         "sensitivity_judge": sensitivity_judge,
         "n_scores": sensitivity_overall.get("n_scores"),
         "same_slope_sign_count": same_sign,
         "gradient_comparison": rows,
+        "adjusted_same_slope_sign_count": adjusted_same_sign,
+        "adjusted_gradient_comparison": adjusted_rows,
         "baseline_overall": baseline_overall,
         "sensitivity_overall": sensitivity_overall,
         "baseline_interval_summary": baseline.get("interval_hypothesis_tests", {}).get("_summary", {}),
         "sensitivity_interval_summary": sensitivity.get("interval_hypothesis_tests", {}).get("_summary", {}),
         "interpretation": interpretation,
     }
+    if baseline_scores is not None and sensitivity_scores is not None:
+        report["baseline_distribution"] = score_distribution_diagnostics(baseline_scores).get("overall", {})
+        report["sensitivity_distribution"] = score_distribution_diagnostics(sensitivity_scores).get("overall", {})
+        report["judge_score_agreement"] = judge_score_agreement(
+            baseline_scores,
+            sensitivity_scores,
+            generations or [],
+        )
+    return report
 
 
 def command_judge_sensitivity(args: argparse.Namespace) -> int:
@@ -471,7 +822,17 @@ def command_judge_sensitivity(args: argparse.Namespace) -> int:
         },
     )
     baseline = read_json(source_path / "analysis.json")
-    comparison = compare_judge_analyses(args.run_id, config.judge_model, judge, baseline, analysis)
+    baseline_scores = read_jsonl(source_path / "scores.jsonl", ScoreRecord)
+    comparison = compare_judge_analyses(
+        args.run_id,
+        config.judge_model,
+        judge,
+        baseline,
+        analysis,
+        baseline_scores=baseline_scores,
+        sensitivity_scores=scores,
+        generations=records,
+    )
     write_json(sensitivity_dir / "comparison.json", comparison)
     (sensitivity_dir / "comparison.md").write_text(sensitivity_markdown(comparison), encoding="utf-8")
     console.print(f"Wrote sensitivity scores to {score_path}")
@@ -636,6 +997,230 @@ def command_iterate(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_score_v2(args: argparse.Namespace) -> int:
+    _effective_path, config, prompts, roles_file, packets = load_all_for_run(args.config, args.run_id)
+    judge = args.judge or config.judge_model
+    client = RoutedClient(config.ollama_url)
+    client.ensure_models([judge])
+    path = run_dir(config, args.run_id)
+    records = read_jsonl(path / "generations.jsonl", GenerationRecord)
+    new_scores = score_v2_records(
+        config,
+        prompts,
+        roles_file,
+        packets,
+        records,
+        path,
+        judge=judge,
+        workers=args.workers,
+        force=args.force,
+        score_json_retry=args.score_json_retry,
+    )
+    console.print(f"Wrote {len(new_scores)} new v2 score(s) to {v2_score_path(path, judge)}")
+    return 0
+
+
+def command_analyze_v2(args: argparse.Namespace) -> int:
+    effective_path, config, prompts, roles_file, _packets = load_all_for_run(args.config, args.run_id)
+    judge = args.judge or config.judge_model
+    path = run_dir(config, args.run_id)
+    meta = read_json(path / "run_meta.json")
+    models = meta.get("models", config.default_models)
+    analysis = write_v2_analysis(config, prompts, roles_file, path, args.run_id, models, judge, effective_path)
+    console.print(f"Wrote v2 analysis to {path / 'v2' / 'analysis.json'}")
+    console.print(f"refusal_rate={analysis.get('overall', {}).get('refusal_rate')}")
+    return 0
+
+
+def command_iterate_v2(args: argparse.Namespace) -> int:
+    effective_path, config, prompts, roles_file, packets = load_all_for_run(args.config, args.run_id)
+    models = parse_models(args.models, config)
+    judge = config.judge_model
+    client = RoutedClient(config.ollama_url)
+    client.ensure_models(sorted(set(models + [judge])))
+    run_id, path = init_run(config, str(effective_path), models, frozen_config=True, run_id=args.run_id)
+    for cycle in range(args.cycles):
+        state = load_calibration_state(path)
+        selected = select_batch(
+            prompts,
+            config.roles,
+            models,
+            args.batch_size,
+            config.seed,
+            cycle,
+            agency_modes=config.agency_modes,
+            selection_strategy=config.selection_strategy,
+        )
+        console.print(f"[bold]V2 cycle {cycle}[/bold]: generating {len(selected)} items")
+        existing_ids = {record.item_id for record in read_jsonl(path / "generations.jsonl", GenerationRecord)}
+        generate_records(
+            config,
+            prompts,
+            roles_file,
+            packets,
+            selected,
+            run_id,
+            cycle,
+            state,
+            client,
+            existing_ids,
+            out_path=path / "generations.jsonl",
+            error_path=path / "generation_errors.jsonl",
+        )
+        all_records = read_jsonl(path / "generations.jsonl", GenerationRecord)
+        score_v2_records(
+            config,
+            prompts,
+            roles_file,
+            packets,
+            all_records,
+            path,
+            judge=judge,
+            workers=args.workers,
+            score_json_retry=args.score_json_retry,
+        )
+        write_v2_analysis(config, prompts, roles_file, path, run_id, models, judge, effective_path)
+    if args.export_rating_packet:
+        output = export_v2_rating_packet(config, run_id, max_items=args.max_items)
+        console.print(f"Wrote v2 rating packet to {output}")
+    console.print(f"Completed v2 run_id={run_id}")
+    console.print(f"Artifacts: {path / 'v2'}")
+    return 0
+
+
+def command_judge_sensitivity_v2(args: argparse.Namespace) -> int:
+    effective_path, config, prompts, roles_file, packets = load_all_for_run(args.config, args.run_id)
+    path = run_dir(config, args.run_id)
+    records = read_jsonl(path / "generations.jsonl", GenerationRecord)
+    require_unique_item_ids(records, "generation")
+    if not records:
+        raise ValueError(f"run {args.run_id} has no generations.jsonl")
+    judge = args.judge
+    client = RoutedClient(config.ollama_url)
+    client.ensure_models([judge])
+    if args.sample_strategy:
+        return command_judge_sensitivity_v2_sample(
+            args,
+            effective_path,
+            config,
+            prompts,
+            roles_file,
+            packets,
+            path,
+            records,
+            judge,
+        )
+    score_v2_records(
+        config,
+        prompts,
+        roles_file,
+        packets,
+        records,
+        path,
+        judge=judge,
+        workers=args.workers,
+        force=args.force,
+        score_json_retry=args.score_json_retry,
+    )
+    sensitivity_scores = read_jsonl(v2_score_path(path, judge), V2ScoreRecord)
+    require_unique_item_ids(sensitivity_scores, "v2 sensitivity score")
+    if len(sensitivity_scores) != len(records):
+        raise ValueError(f"v2 sensitivity incomplete: {len(sensitivity_scores)} score(s) for {len(records)} generation(s)")
+    analysis = analyze_v2_scores(
+        sensitivity_scores,
+        prompts,
+        roles_file.by_id,
+        exploratory_same_provider=same_provider_exploratory([record.model for record in records], judge),
+    )
+    sensitivity_dir = v2_judge_dir(path, judge)
+    write_json(sensitivity_dir / "analysis.json", analysis)
+    (sensitivity_dir / "observations.md").write_text(v2_observations_markdown(analysis), encoding="utf-8")
+    write_json(
+        sensitivity_dir / "meta.json",
+        {
+            "created_at": now_iso(),
+            "source_run_id": args.run_id,
+            "source_config_path": str(effective_path),
+            "primary_judge": config.judge_model,
+            "sensitivity_judge": judge,
+            "score_json_retry": args.score_json_retry if args.score_json_retry is not None else config.score_json_retry,
+            "n_scores": len(sensitivity_scores),
+        },
+    )
+
+    primary_scores = read_jsonl(v2_score_path(path, config.judge_model), V2ScoreRecord)
+    require_unique_item_ids(primary_scores, "v2 primary score")
+    if len(primary_scores) != len(records):
+        raise ValueError(
+            f"v2 primary scoring incomplete: {len(primary_scores)} score(s) for {len(records)} generation(s)"
+        )
+    comparison = compare_v2_judges(primary_scores, sensitivity_scores, records)
+    comparison_path = path / "v2" / f"comparison_{safe_artifact_name(judge)}.json"
+    write_json(comparison_path, comparison)
+    (path / "v2" / f"comparison_{safe_artifact_name(judge)}.md").write_text(
+        v2_sensitivity_markdown(comparison), encoding="utf-8"
+    )
+    console.print(f"Wrote v2 sensitivity scores to {v2_score_path(path, judge)}")
+    console.print(f"Wrote v2 comparison to {comparison_path}")
+    return 0
+
+
+def command_audit_v2(args: argparse.Namespace) -> int:
+    config = load_config(effective_config_path(args.config, args.run_id))
+    path = run_dir(config, args.run_id)
+    judge = args.judge or config.judge_model
+    records = read_jsonl(path / "generations.jsonl", GenerationRecord)
+    scores = read_jsonl(v2_score_path(path, judge), V2ScoreRecord)
+    errors: list[str] = []
+    try:
+        require_unique_item_ids(records, "generation")
+    except ValueError as exc:
+        errors.append(str(exc))
+    try:
+        require_unique_item_ids(scores, "v2 score")
+    except ValueError as exc:
+        errors.append(str(exc))
+    generation_ids = {record.item_id for record in records if not record.error and record.output.strip()}
+    score_ids = {score.item_id for score in scores}
+    missing_scores = sorted(generation_ids - score_ids)
+    orphan_scores = sorted(score_ids - generation_ids)
+    if missing_scores:
+        errors.append(f"{len(missing_scores)} successful generation(s) have no v2 score for {judge}")
+    if orphan_scores:
+        errors.append(f"{len(orphan_scores)} v2 score row(s) have no successful generation")
+    expected = None
+    if args.expect_full:
+        meta = read_json(path / "run_meta.json")
+        models = meta.get("models", config.default_models)
+        expected = len(
+            select_batch(
+                prompts=filter_prompts(load_prompts(config.prompts_path), config.prompt_ids),
+                roles=config.roles,
+                models=models,
+                batch_size="all",
+                seed=config.seed,
+                cycle=0,
+                agency_modes=config.agency_modes,
+                selection_strategy=config.selection_strategy,
+            )
+        )
+        if len(generation_ids) != expected:
+            errors.append(f"expected {expected} successful generation(s), found {len(generation_ids)}")
+        if len(score_ids) != expected:
+            errors.append(f"expected {expected} v2 score row(s), found {len(score_ids)}")
+    table = Table(title=f"ADFE v2 Audit: {args.run_id}")
+    table.add_column("Check")
+    table.add_column("Status")
+    table.add_row("judge", judge)
+    table.add_row("n_successful_generations", str(len(generation_ids)))
+    table.add_row("n_v2_scores", str(len(score_ids)))
+    table.add_row("expected_full_count", str(expected))
+    for error in errors:
+        table.add_row("ERROR", error)
+    console.print(table)
+    return 0 if not errors else 2
+
+
 def parse_optional_bool(value: str) -> bool | None:
     cleaned = value.strip().lower()
     if cleaned in {"true", "yes", "y", "1"}:
@@ -716,12 +1301,268 @@ def select_targeted_rating_items(
     return [record_by_id[item_id] for item_id in selected_ids if item_id in record_by_id]
 
 
+def latest_sensitivity_scores_path(run_path: Path) -> Path | None:
+    base = run_path / "judge_sensitivity"
+    if not base.is_dir():
+        return None
+    candidates = [path for path in base.iterdir() if (path / "scores.jsonl").is_file()]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: (path / "scores.jsonl").stat().st_mtime) / "scores.jsonl"
+
+
+def latest_v2_sensitivity_scores_path(run_path: Path, primary_judge: str) -> Path | None:
+    base = run_path / "v2"
+    if not base.is_dir():
+        return None
+    primary_dir = safe_artifact_name(primary_judge)
+    candidates = [
+        path
+        for path in base.iterdir()
+        if path.is_dir() and path.name != primary_dir and (path / "scores.jsonl").is_file()
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: (path / "scores.jsonl").stat().st_mtime) / "scores.jsonl"
+
+
+def export_v2_rating_packet(config: StudyConfig, run_id: str, max_items: int | None = None) -> Path:
+    path = run_dir(config, run_id)
+    records = read_jsonl(path / "generations.jsonl", GenerationRecord)
+    record_by_id = {record.item_id: record for record in records}
+    primary_scores = read_jsonl(v2_score_path(path, config.judge_model), V2ScoreRecord)
+    primary_by_id = {score.item_id: score for score in primary_scores}
+    sensitivity_path = latest_v2_sensitivity_scores_path(path, config.judge_model)
+    sensitivity_scores = read_jsonl(sensitivity_path, V2ScoreRecord) if sensitivity_path else []
+    prompts = {prompt.id: prompt for prompt in load_prompts(config.prompts_path)}
+    selected_ids: list[str] = []
+    context: dict[str, dict[str, Any]] = {}
+
+    def add_item(item_id: str, reason: str, extra: dict[str, Any] | None = None) -> None:
+        if item_id not in record_by_id or item_id not in primary_by_id:
+            return
+        if item_id not in selected_ids:
+            selected_ids.append(item_id)
+        entry = context.setdefault(item_id, {"selection_reasons": []})
+        if reason not in entry["selection_reasons"]:
+            entry["selection_reasons"].append(reason)
+        if extra:
+            entry.update(extra)
+
+    if sensitivity_scores:
+        comparison = compare_v2_judges(primary_scores, sensitivity_scores, records)
+        for row in comparison.get("top_disagreements", [])[:80]:
+            reason = "v2_judge_refusal_mismatch" if row.get("refusal_mismatch") else "v2_high_judge_disagreement"
+            add_item(row["item_id"], reason, {"comparison": row})
+
+    analysis = analyze_v2_scores(primary_scores, list(prompts.values()), load_role_cards(config.role_cards_path).by_id)
+    for row in analysis.get("role_profile", {}).get("top_profile_mismatches", [])[:40]:
+        add_item(row["item_id"], "v2_role_profile_mismatch", {"profile_mismatch": row})
+
+    borderline_refusals = [
+        score
+        for score in primary_scores
+        if score.refusal and (score.refusal_warranted is False or score.refusal_warranted is None)
+    ]
+    for score in sorted(borderline_refusals, key=lambda item: (item.refusal_warranted is not False, item.model, item.role))[:40]:
+        add_item(score.item_id, "v2_refusal_borderline")
+
+    if sensitivity_scores and max_items is not None:
+        comparison = compare_v2_judges(primary_scores, sensitivity_scores, records)
+        controls = comparison.get("low_disagreement_controls", [])
+        for row in controls[: max(4, max_items // 10)]:
+            add_item(row["item_id"], "v2_low_disagreement_control", {"comparison": row})
+
+    selected_ids = selected_ids[:max_items] if max_items is not None else selected_ids
+    rows = []
+    for record in [record_by_id[item_id] for item_id in selected_ids]:
+        prompt = prompts.get(record.prompt_id)
+        score = primary_by_id[record.item_id]
+        item_context = context.get(record.item_id, {})
+        comparison = item_context.get("comparison", {})
+        rows.append(
+            {
+                "item_id": record.item_id,
+                "selection_reason": "; ".join(item_context.get("selection_reasons", [])),
+                "topic": prompt.topic if prompt else "",
+                "task": prompt.task if prompt else "",
+                "viewpoint": prompt.viewpoint if prompt else "",
+                "risk": prompt.risk if prompt else "",
+                "audience": prompt.audience if prompt else "",
+                "assigned_role": record.role,
+                "agency_mode": record.agency_mode,
+                "prompt_id": record.prompt_id,
+                "source_packet_id": record.source_packet_id,
+                "output": record.output,
+                "human_refusal": "",
+                "human_refusal_warranted": "",
+                "human_quality_U": "",
+                "human_quality_E": "",
+                "human_quality_V": "",
+                "human_quality_C": "",
+                "human_quality_D": "",
+                "human_quality_M": "",
+                "human_role_profile_fit": "",
+                "human_inferred_role": "",
+                "notes": "",
+                "primary_judge": score.judge_model,
+                "primary_refusal": score.refusal,
+                "primary_refusal_warranted": score.refusal_warranted,
+                "primary_quality_scores_json": json.dumps(score.quality_scores, sort_keys=True),
+                "primary_role_profile_scores_json": json.dumps(score.role_profile_scores, sort_keys=True),
+                "primary_issues": json.dumps(score.issues, ensure_ascii=False),
+                "sensitivity_judge": comparison.get("sensitivity_judge", ""),
+                "sensitivity_refusal": comparison.get("sensitivity_refusal", ""),
+                "judge_quality_delta": comparison.get("quality_mean_abs_delta_non_refusal", ""),
+                "judge_profile_delta": comparison.get("role_profile_mean_abs_delta", ""),
+            }
+        )
+    fieldnames = [
+        "item_id",
+        "selection_reason",
+        "topic",
+        "task",
+        "viewpoint",
+        "risk",
+        "audience",
+        "assigned_role",
+        "agency_mode",
+        "prompt_id",
+        "source_packet_id",
+        "output",
+        "human_refusal",
+        "human_refusal_warranted",
+        "human_quality_U",
+        "human_quality_E",
+        "human_quality_V",
+        "human_quality_C",
+        "human_quality_D",
+        "human_quality_M",
+        "human_role_profile_fit",
+        "human_inferred_role",
+        "notes",
+        "primary_judge",
+        "primary_refusal",
+        "primary_refusal_warranted",
+        "primary_quality_scores_json",
+        "primary_role_profile_scores_json",
+        "primary_issues",
+        "sensitivity_judge",
+        "sensitivity_refusal",
+        "judge_quality_delta",
+        "judge_profile_delta",
+    ]
+    output = path / "v2" / "rating_packet.csv"
+    write_csv(output, rows, fieldnames)
+    return output
+
+
+def select_judge_disagreement_rating_items(
+    records: list[GenerationRecord],
+    scores: list[ScoreRecord],
+    sensitivity_scores: list[ScoreRecord],
+    max_items: int | None,
+) -> tuple[list[GenerationRecord], dict[str, dict[str, Any]]]:
+    record_by_id = {record.item_id: record for record in records}
+    score_by_id = {score.item_id: score for score in scores}
+    sensitivity_by_id = {score.item_id: score for score in sensitivity_scores}
+    delta_rows = judge_score_delta_rows(scores, sensitivity_scores, records)
+    context: dict[str, dict[str, Any]] = {}
+    ordered_ids: list[str] = []
+
+    def add_item(item_id: str, reason: str) -> None:
+        if item_id not in record_by_id or item_id not in score_by_id or item_id not in sensitivity_by_id:
+            return
+        if item_id not in ordered_ids:
+            ordered_ids.append(item_id)
+        entry = context.setdefault(item_id, {"selection_reasons": []})
+        if reason not in entry["selection_reasons"]:
+            entry["selection_reasons"].append(reason)
+
+    refusal_mismatches = sorted(
+        [row for row in delta_rows if row["refusal_mismatch"]],
+        key=lambda row: (row["mean_abs_delta"], row["max_delta"]),
+        reverse=True,
+    )
+    for row in refusal_mismatches[:30]:
+        add_item(row["item_id"], "judge_refusal_mismatch")
+
+    ceiling_with_issues = [
+        row
+        for row in delta_rows
+        if "baseline ceiling with issues" in row["selection_reasons"]
+        or "sensitivity ceiling with issues" in row["selection_reasons"]
+    ]
+    for row in sorted(ceiling_with_issues, key=lambda row: row["mean_abs_delta"], reverse=True)[:30]:
+        add_item(row["item_id"], "ceiling_score_with_issues")
+
+    refusal_added = 0
+    refusal_limit = 30 if max_items is None else min(30, max(5, max_items // 4))
+    for score in sorted(scores, key=lambda item: (not item.refusal, item.model, item.role, item.agency_mode, item.prompt_id)):
+        if score.refusal:
+            add_item(score.item_id, "primary_refusal_case")
+            refusal_added += 1
+            if refusal_added >= refusal_limit:
+                break
+
+    control_budget = 0 if max_items is None else min(12, max(3, max_items // 10))
+    high_disagreement_limit = None if max_items is None else max(0, max_items - control_budget)
+    for row in sorted(delta_rows, key=lambda row: (row["mean_abs_delta"], row["max_delta"]), reverse=True):
+        add_item(row["item_id"], "high_judge_disagreement")
+        if high_disagreement_limit is not None and len(ordered_ids) >= high_disagreement_limit:
+            break
+
+    controls = [
+        row
+        for row in delta_rows
+        if not row["refusal_mismatch"]
+        and not row["baseline_issues"]
+        and not row["sensitivity_issues"]
+        and row["mean_abs_delta"] <= 0.05
+    ]
+    for row in sorted(controls, key=lambda row: (row["mean_abs_delta"], row["item_id"])):
+        add_item(row["item_id"], "low_disagreement_control")
+        if max_items is not None and len(ordered_ids) >= max_items:
+            break
+
+    selected_ids = ordered_ids[:max_items] if max_items is not None else ordered_ids
+    for row in delta_rows:
+        if row["item_id"] not in selected_ids:
+            continue
+        baseline = score_by_id[row["item_id"]]
+        sensitivity = sensitivity_by_id[row["item_id"]]
+        context[row["item_id"]].update(
+            {
+                "primary_judge": baseline.judge_model,
+                "sensitivity_judge": sensitivity.judge_model,
+                "primary_refusal": baseline.refusal,
+                "sensitivity_refusal": sensitivity.refusal,
+                "primary_issues": baseline.issues,
+                "sensitivity_issues": sensitivity.issues,
+                "primary_scores": baseline.scores,
+                "sensitivity_scores": sensitivity.scores,
+                "judge_mean_abs_delta": row["mean_abs_delta"],
+                "judge_max_delta_dim": row["max_delta_dim"],
+                "judge_max_delta": row["max_delta"],
+            }
+        )
+    return [record_by_id[item_id] for item_id in selected_ids], context
+
+
 def export_rating_packet(config: StudyConfig, run_id: str, strategy: str = "all", max_items: int | None = None) -> Path:
     path = run_dir(config, run_id)
     records = read_jsonl(path / "generations.jsonl", GenerationRecord)
+    rating_context: dict[str, dict[str, Any]] = {}
     if strategy == "targeted-agency":
         scores = read_jsonl(path / "scores.jsonl", ScoreRecord)
         records = select_targeted_rating_items(config, run_id, records, scores, max_items)
+    elif strategy == "judge-disagreement":
+        scores = read_jsonl(path / "scores.jsonl", ScoreRecord)
+        sensitivity_path = latest_sensitivity_scores_path(path)
+        if sensitivity_path is None:
+            raise ValueError(f"run {run_id} has no judge_sensitivity scores")
+        sensitivity_scores = read_jsonl(sensitivity_path, ScoreRecord)
+        records, rating_context = select_judge_disagreement_rating_items(records, scores, sensitivity_scores, max_items)
     elif max_items is not None:
         records = records[:max_items]
     prompts = {prompt.id: prompt for prompt in load_prompts(config.prompts_path)}
@@ -729,10 +1570,12 @@ def export_rating_packet(config: StudyConfig, run_id: str, strategy: str = "all"
     for idx, record in enumerate(records, start=1):
         blind_id = hashlib.sha256(f"{run_id}:{record.item_id}".encode("utf-8")).hexdigest()[:12]
         prompt = prompts.get(record.prompt_id)
+        context = rating_context.get(record.item_id, {})
         rows.append(
             {
                 "blind_id": blind_id,
                 "item_id": record.item_id,
+                "selection_reason": "; ".join(context.get("selection_reasons", [])),
                 "topic": prompt.topic if prompt else "",
                 "task": prompt.task if prompt else "",
                 "viewpoint": prompt.viewpoint if prompt else "",
@@ -755,11 +1598,23 @@ def export_rating_packet(config: StudyConfig, run_id: str, strategy: str = "all"
                 "paired_treatment_symmetric": "",
                 "rater_id": "",
                 "notes": "",
+                "primary_judge": context.get("primary_judge", ""),
+                "sensitivity_judge": context.get("sensitivity_judge", ""),
+                "primary_refusal": context.get("primary_refusal", ""),
+                "sensitivity_refusal": context.get("sensitivity_refusal", ""),
+                "primary_issues": json.dumps(context.get("primary_issues", []), ensure_ascii=False),
+                "sensitivity_issues": json.dumps(context.get("sensitivity_issues", []), ensure_ascii=False),
+                "primary_scores_json": json.dumps(context.get("primary_scores", {}), ensure_ascii=False, sort_keys=True),
+                "sensitivity_scores_json": json.dumps(context.get("sensitivity_scores", {}), ensure_ascii=False, sort_keys=True),
+                "judge_mean_abs_delta": context.get("judge_mean_abs_delta", ""),
+                "judge_max_delta_dim": context.get("judge_max_delta_dim", ""),
+                "judge_max_delta": context.get("judge_max_delta", ""),
             }
         )
     fieldnames = [
         "blind_id",
         "item_id",
+        "selection_reason",
         "topic",
         "task",
         "viewpoint",
@@ -777,6 +1632,17 @@ def export_rating_packet(config: StudyConfig, run_id: str, strategy: str = "all"
         "paired_treatment_symmetric",
         "rater_id",
         "notes",
+        "primary_judge",
+        "sensitivity_judge",
+        "primary_refusal",
+        "sensitivity_refusal",
+        "primary_issues",
+        "sensitivity_issues",
+        "primary_scores_json",
+        "sensitivity_scores_json",
+        "judge_mean_abs_delta",
+        "judge_max_delta_dim",
+        "judge_max_delta",
     ]
     output = path / "rating_packet.csv"
     write_csv(output, rows, fieldnames)
@@ -789,6 +1655,15 @@ def command_export_ratings(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     output = export_rating_packet(config, args.run_id, strategy=args.strategy, max_items=args.max_items)
     console.print(f"Wrote rating packet to {output}")
+    return 0
+
+
+def command_export_ratings_v2(args: argparse.Namespace) -> int:
+    if args.max_items is not None and args.max_items <= 0:
+        raise ValueError("--max-items must be positive")
+    config = load_config(effective_config_path(args.config, args.run_id))
+    output = export_v2_rating_packet(config, args.run_id, max_items=args.max_items)
+    console.print(f"Wrote v2 rating packet to {output}")
     return 0
 
 
@@ -913,8 +1788,8 @@ def command_build_site(args: argparse.Namespace) -> int:
         console.print("[red]build-site now requires --run-id, or pass --latest explicitly[/red]")
         return 2
     run_dir = (root / "runs" / args.run_id) if args.run_id else None
-    if run_dir is not None and not (run_dir / "analysis.json").is_file():
-        console.print(f"[red]run {args.run_id} has no analysis.json (run `analyze` first)[/red]")
+    if run_dir is not None and not (run_dir / "analysis.json").is_file() and not (run_dir / "v2" / "analysis.json").is_file():
+        console.print(f"[red]run {args.run_id} has no analysis.json or v2/analysis.json (run `analyze` or `analyze-v2` first)[/red]")
         return 2
     validation_dir = Path(args.validation_dir) if args.validation_dir else None
     summary = build_summary(root, run_dir, validation_dir)
@@ -996,6 +1871,15 @@ def build_parser() -> argparse.ArgumentParser:
     score.add_argument("--force", action="store_true")
     score.set_defaults(func=command_score)
 
+    score_v2 = sub.add_parser("score-v2")
+    score_v2.add_argument("--config", default=argparse.SUPPRESS)
+    score_v2.add_argument("--run-id", required=True)
+    score_v2.add_argument("--judge", help="override config judge model for this v2 score artifact")
+    score_v2.add_argument("--force", action="store_true")
+    score_v2.add_argument("--score-json-retry", type=int)
+    score_v2.add_argument("--workers", type=int, default=1)
+    score_v2.set_defaults(func=command_score_v2)
+
     rescore = sub.add_parser("rescore")
     rescore.add_argument("--config", default=argparse.SUPPRESS)
     rescore.add_argument("--run-id", required=True)
@@ -1006,6 +1890,12 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--run-id", required=True)
     analyze.add_argument("--with-human-calibration", action="store_true")
     analyze.set_defaults(func=command_analyze)
+
+    analyze_v2 = sub.add_parser("analyze-v2")
+    analyze_v2.add_argument("--config", default=argparse.SUPPRESS)
+    analyze_v2.add_argument("--run-id", required=True)
+    analyze_v2.add_argument("--judge", help="override config judge model for the primary v2 artifact")
+    analyze_v2.set_defaults(func=command_analyze_v2)
 
     iterate = sub.add_parser("iterate")
     iterate.add_argument("--config", default=argparse.SUPPRESS)
@@ -1022,12 +1912,30 @@ def build_parser() -> argparse.ArgumentParser:
     iterate.add_argument("--frozen-config", action="store_true", help="deprecated: frozen is now the default")
     iterate.set_defaults(func=command_iterate)
 
+    iterate_v2 = sub.add_parser("iterate-v2")
+    iterate_v2.add_argument("--config", default=argparse.SUPPRESS)
+    iterate_v2.add_argument("--models")
+    iterate_v2.add_argument("--cycles", type=int, default=1)
+    iterate_v2.add_argument("--batch-size", type=parse_batch_size, default=40)
+    iterate_v2.add_argument("--run-id")
+    iterate_v2.add_argument("--score-json-retry", type=int)
+    iterate_v2.add_argument("--workers", type=int, default=1, help="concurrent v2 scoring workers")
+    iterate_v2.add_argument("--export-rating-packet", action="store_true")
+    iterate_v2.add_argument("--max-items", type=int, help="max items if --export-rating-packet is used")
+    iterate_v2.set_defaults(func=command_iterate_v2)
+
     export_ratings = sub.add_parser("export-ratings")
     export_ratings.add_argument("--config", default=argparse.SUPPRESS)
     export_ratings.add_argument("--run-id", required=True)
-    export_ratings.add_argument("--strategy", choices=["all", "targeted-agency"], default="all")
+    export_ratings.add_argument("--strategy", choices=["all", "targeted-agency", "judge-disagreement"], default="all")
     export_ratings.add_argument("--max-items", type=int)
     export_ratings.set_defaults(func=command_export_ratings)
+
+    export_ratings_v2 = sub.add_parser("export-ratings-v2")
+    export_ratings_v2.add_argument("--config", default=argparse.SUPPRESS)
+    export_ratings_v2.add_argument("--run-id", required=True)
+    export_ratings_v2.add_argument("--max-items", type=int)
+    export_ratings_v2.set_defaults(func=command_export_ratings_v2)
 
     import_ratings = sub.add_parser("import-ratings")
     import_ratings.add_argument("--config", default=argparse.SUPPRESS)
@@ -1048,6 +1956,13 @@ def build_parser() -> argparse.ArgumentParser:
     audit_run_parser.add_argument("--allow-contaminated", action="store_true")
     audit_run_parser.set_defaults(func=command_audit_run)
 
+    audit_v2_parser = sub.add_parser("audit-v2")
+    audit_v2_parser.add_argument("--config", default=argparse.SUPPRESS)
+    audit_v2_parser.add_argument("--run-id", required=True)
+    audit_v2_parser.add_argument("--judge", help="override config judge model for v2 score completeness")
+    audit_v2_parser.add_argument("--expect-full", action="store_true")
+    audit_v2_parser.set_defaults(func=command_audit_v2)
+
     repair_run_parser = sub.add_parser("repair-run")
     repair_run_parser.add_argument("--config", default=argparse.SUPPRESS)
     repair_run_parser.add_argument("--run-id", required=True)
@@ -1065,6 +1980,19 @@ def build_parser() -> argparse.ArgumentParser:
     judge_sensitivity.add_argument("--score-json-retry", type=int, help="override config score_json_retry for this judge")
     judge_sensitivity.add_argument("--workers", type=int, default=1, help="concurrent scoring workers; outputs are still appended serially")
     judge_sensitivity.set_defaults(func=command_judge_sensitivity)
+
+    judge_sensitivity_v2 = sub.add_parser("judge-sensitivity-v2")
+    judge_sensitivity_v2.add_argument("--config", default=argparse.SUPPRESS)
+    judge_sensitivity_v2.add_argument("--run-id", required=True)
+    judge_sensitivity_v2.add_argument("--judge", required=True, help="alternate v2 judge model spec, e.g. qwen3:8b")
+    judge_sensitivity_v2.add_argument("--force", action="store_true", help="discard existing v2 sensitivity scores for this judge")
+    judge_sensitivity_v2.add_argument("--score-json-retry", type=int, default=2)
+    judge_sensitivity_v2.add_argument("--workers", type=int, default=1)
+    judge_sensitivity_v2.add_argument("--sample-strategy", choices=["stratified"], help="score a reproducible v2 sensitivity sample instead of the full run")
+    judge_sensitivity_v2.add_argument("--sample-size", type=int, help="number of sampled rows for --sample-strategy")
+    judge_sensitivity_v2.add_argument("--sample-seed", type=int, default=20260620)
+    judge_sensitivity_v2.add_argument("--artifact-name", help="directory name under run/v2 for sampled sensitivity artifacts")
+    judge_sensitivity_v2.set_defaults(func=command_judge_sensitivity_v2)
 
     validate_judge = sub.add_parser("validate-judge")
     validate_judge.add_argument("--config", default=argparse.SUPPRESS)

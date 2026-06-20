@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 176" role="img" aria-label="Local citable vs frontier exploratory">
+<style>
+.bg{fill:#fff} .ink{fill:#11151c} .muted{fill:#5b6470} .grid{stroke:#d9dee7} .axis{stroke:#8b95a1}
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){.bg{fill:#161b22} .ink{fill:#e9edf3} .muted{fill:#9aa4b1} .grid{stroke:#303844} .axis{stroke:#717b88}}
+</style>
+<rect class="bg" x="0" y="0" width="920" height="176" rx="10"/>
+<text class="ink" x="24" y="30" font-size="18" font-weight="700">Local citable vs frontier exploratory</text>
+<text class="muted" x="24" y="52" font-size="13">Frontier results are separated because Grok is also the primary judge.</text>
+<line class="axis" x1="190" y1="66" x2="190" y2="142" stroke-width="1"/>
+<line class="grid" x1="790" y1="66" x2="790" y2="142" stroke-width="1"/>
+<text class="ink mono" x="24" y="89" font-size="12">local clean</text>
+<rect x="190" y="77" width="600.0" height="10" rx="3" fill="#2f4fd8"/>
+<rect x="190" y="90" width="550.0" height="10" rx="3" fill="#cc6f47"/>
+<text class="muted mono" x="802" y="89" font-size="12">14.3% / 13.1%</text>
+<text class="ink mono" x="24" y="123" font-size="12">frontier exploratory</text>
+<rect x="190" y="111" width="239.7" height="10" rx="3" fill="#2f4fd8"/>
+<rect x="190" y="124" width="133.1" height="10" rx="3" fill="#cc6f47"/>
+<text class="muted mono" x="802" y="123" font-size="12">5.7% / 3.2%</text>
+<rect x="190" y="156" width="10" height="10" rx="2" fill="#2f4fd8"/>
+<text class="muted" x="205" y="165" font-size="12">refusal</text>
+<rect x="310" y="156" width="10" height="10" rx="2" fill="#cc6f47"/>
+<text class="muted" x="325" y="165" font-size="12">over-refusal</text>
+</svg>

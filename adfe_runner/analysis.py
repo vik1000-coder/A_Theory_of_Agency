@@ -6,7 +6,7 @@ from statistics import mean
 from typing import Any
 
 from .schemas import DIMENSIONS, HumanRatingRecord, PromptItem, RoleCard, ScoreRecord
-from .stats import agency_gradient_mixedlm
+from .stats import agency_gradient_adjusted, agency_gradient_mixedlm
 
 
 PAIR_GAP_FEATURES = (
@@ -355,6 +355,238 @@ def dimension_means(enriched: list[dict[str, Any]], group_key: str) -> dict[str,
     return out
 
 
+def score_distribution_diagnostics(scores: list[ScoreRecord]) -> dict[str, Any]:
+    """Summarize ceiling/saturation behavior in normalized judge scores."""
+
+    def summarize(rows: list[ScoreRecord]) -> dict[str, Any]:
+        if not rows:
+            return {"n": 0, "by_dimension": {}}
+        by_dimension: dict[str, Any] = {}
+        for dim in DIMENSIONS:
+            vals = [row.scores[dim] for row in rows]
+            by_dimension[dim] = {
+                "n": len(vals),
+                "mean": round(mean(vals), 4),
+                "ceiling_rate": round(mean(float(value >= 1.0) for value in vals), 4),
+                "floor_rate": round(mean(float(value <= 0.0) for value in vals), 4),
+            }
+        all_perfect = [all(row.scores[dim] >= 1.0 for dim in DIMENSIONS) for row in rows]
+        all_perfect_with_issues = [
+            all_perfect[index] and bool(rows[index].issues)
+            for index in range(len(rows))
+        ]
+        return {
+            "n": len(rows),
+            "by_dimension": by_dimension,
+            "all_perfect_count": int(sum(all_perfect)),
+            "all_perfect_rate": round(mean(float(value) for value in all_perfect), 4),
+            "all_perfect_with_issues_count": int(sum(all_perfect_with_issues)),
+            "all_perfect_with_issues_rate": round(mean(float(value) for value in all_perfect_with_issues), 4),
+        }
+
+    by_judge: dict[str, list[ScoreRecord]] = defaultdict(list)
+    for score in scores:
+        by_judge[score.judge_model].append(score)
+    return {
+        "overall": summarize(scores),
+        "by_judge": {judge: summarize(rows) for judge, rows in sorted(by_judge.items())},
+    }
+
+
+def role_profile_design(roles: dict[str, RoleCard]) -> dict[str, Any]:
+    """Expose whether the hand-written expected role profiles are monotone in agency."""
+    ordered = sorted(roles.values(), key=lambda role: (role.agency_level, role.id))
+    role_rows = []
+    xs = [role.agency_level for role in ordered]
+    for role in ordered:
+        role_rows.append(
+            {
+                "role": role.id,
+                "label": role.label,
+                "agency_level": role.agency_level,
+                "expected_midpoints": {
+                    dim: round((role.expected[dim][0] + role.expected[dim][1]) / 2, 4)
+                    for dim in DIMENSIONS
+                },
+            }
+        )
+    dimension_rows = []
+    for dim in DIMENSIONS:
+        ys = [row["expected_midpoints"][dim] for row in role_rows]
+        dimension_rows.append(
+            {
+                "dim": dim,
+                "expected_agency_correlation": pearson(xs, ys),
+                "expected_midpoints": {row["role"]: row["expected_midpoints"][dim] for row in role_rows},
+            }
+        )
+    return {
+        "roles": role_rows,
+        "by_dimension": dimension_rows,
+        "interpretation": (
+            "Role-card expected profiles are not uniformly monotone in agency level. "
+            "The agency-gradient test is therefore a coarse role-sensitivity diagnostic, "
+            "not a direct test that every expected dimension should rise."
+        ),
+    }
+
+
+def refusal_mediation(
+    scores: list[ScoreRecord],
+    roles: dict[str, RoleCard],
+    prompts: list[PromptItem],
+    all_gradient: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compare the headline gradient before and after removing refusals."""
+    if not scores:
+        return {"available": False, "error": "no scores"}
+    non_refusal_scores = [score for score in scores if not score.refusal]
+    if not non_refusal_scores:
+        return {"available": False, "error": "no non-refusal scores"}
+    all_gradient = all_gradient or agency_gradient_mixedlm(scores, roles, prompts)
+    non_refusal_gradient = agency_gradient_mixedlm(non_refusal_scores, roles, prompts)
+    all_rows = all_gradient.get("by_dimension", {})
+    non_rows = non_refusal_gradient.get("by_dimension", {})
+    dimension_rows = []
+    collapsed_count = 0
+    direction_changed_count = 0
+    for dim in DIMENSIONS:
+        all_row = all_rows.get(dim, {})
+        non_row = non_rows.get(dim, {})
+        all_coef = all_row.get("agency_level_coef")
+        non_coef = non_row.get("agency_level_coef")
+        direction_changed = None
+        coef_delta = None
+        status = "unavailable"
+        if all_coef is not None and non_coef is not None:
+            coef_delta = round(non_coef - all_coef, 4)
+            direction_changed = (all_coef >= 0 and non_coef < 0) or (all_coef < 0 and non_coef >= 0)
+            direction_changed_count += int(direction_changed)
+            all_sig = bool(all_row.get("significant_0_05"))
+            non_sig = bool(non_row.get("significant_0_05"))
+            if direction_changed:
+                status = "direction_changed"
+            elif all_sig and not non_sig:
+                status = "collapses"
+            elif non_sig:
+                status = "persists"
+            else:
+                status = "not_significant"
+            collapsed_count += int(status in {"direction_changed", "collapses"})
+        dimension_rows.append(
+            {
+                "dim": dim,
+                "all_coef": all_coef,
+                "all_pvalue": all_row.get("pvalue"),
+                "all_significant": all_row.get("significant_0_05"),
+                "non_refusal_coef": non_coef,
+                "non_refusal_pvalue": non_row.get("pvalue"),
+                "non_refusal_significant": non_row.get("significant_0_05"),
+                "coef_delta": coef_delta,
+                "direction_changed": direction_changed,
+                "status": status,
+            }
+        )
+    return {
+        "available": True,
+        "n_all": len(scores),
+        "n_non_refusal": len(non_refusal_scores),
+        "n_refusal": len(scores) - len(non_refusal_scores),
+        "refusal_rate": round((len(scores) - len(non_refusal_scores)) / len(scores), 4),
+        "collapsed_or_changed_count": collapsed_count,
+        "direction_changed_count": direction_changed_count,
+        "all_gradient": all_gradient,
+        "non_refusal_gradient": non_refusal_gradient,
+        "by_dimension": dimension_rows,
+    }
+
+
+def _generation_excerpt(text: str, limit: int = 320) -> str:
+    cleaned = " ".join(text.split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: limit - 1].rstrip() + "..."
+
+
+def judge_score_delta_rows(
+    baseline_scores: list[ScoreRecord],
+    sensitivity_scores: list[ScoreRecord],
+    generations: list[Any] | None = None,
+) -> list[dict[str, Any]]:
+    baseline_by_id = {score.item_id: score for score in baseline_scores}
+    sensitivity_by_id = {score.item_id: score for score in sensitivity_scores}
+    generation_by_id = {getattr(record, "item_id", ""): record for record in (generations or [])}
+    rows: list[dict[str, Any]] = []
+    for item_id in sorted(set(baseline_by_id) & set(sensitivity_by_id)):
+        baseline = baseline_by_id[item_id]
+        sensitivity = sensitivity_by_id[item_id]
+        deltas = {dim: round(abs(baseline.scores[dim] - sensitivity.scores[dim]), 4) for dim in DIMENSIONS}
+        max_dim = max(DIMENSIONS, key=lambda dim: deltas[dim])
+        reasons = []
+        if baseline.refusal != sensitivity.refusal:
+            reasons.append("refusal mismatch")
+        if all(baseline.scores[dim] >= 1.0 for dim in DIMENSIONS) and baseline.issues:
+            reasons.append("baseline ceiling with issues")
+        if all(sensitivity.scores[dim] >= 1.0 for dim in DIMENSIONS) and sensitivity.issues:
+            reasons.append("sensitivity ceiling with issues")
+        record = generation_by_id.get(item_id)
+        rows.append(
+            {
+                "item_id": item_id,
+                "model": baseline.model,
+                "role": baseline.role,
+                "agency_mode": baseline.agency_mode,
+                "prompt_id": baseline.prompt_id,
+                "mean_abs_delta": round(mean(deltas.values()), 4),
+                "max_delta_dim": max_dim,
+                "max_delta": deltas[max_dim],
+                "deltas": deltas,
+                "baseline_judge": baseline.judge_model,
+                "sensitivity_judge": sensitivity.judge_model,
+                "baseline_scores": {dim: baseline.scores[dim] for dim in DIMENSIONS},
+                "sensitivity_scores": {dim: sensitivity.scores[dim] for dim in DIMENSIONS},
+                "baseline_refusal": baseline.refusal,
+                "sensitivity_refusal": sensitivity.refusal,
+                "refusal_mismatch": baseline.refusal != sensitivity.refusal,
+                "baseline_issues": baseline.issues,
+                "sensitivity_issues": sensitivity.issues,
+                "selection_reasons": reasons,
+                "output_excerpt": _generation_excerpt(getattr(record, "output", "")) if record else "",
+            }
+        )
+    return rows
+
+
+def judge_score_agreement(
+    baseline_scores: list[ScoreRecord],
+    sensitivity_scores: list[ScoreRecord],
+    generations: list[Any] | None = None,
+    top_n: int = 12,
+) -> dict[str, Any]:
+    rows = judge_score_delta_rows(baseline_scores, sensitivity_scores, generations)
+    if not rows:
+        return {"available": False, "error": "no overlapping item_ids"}
+    by_dimension = {}
+    for dim in DIMENSIONS:
+        vals = [row["deltas"][dim] for row in rows]
+        by_dimension[dim] = {"mean_abs_delta": round(mean(vals), 4), "max_abs_delta": round(max(vals), 4)}
+    refusal_mismatches = [row for row in rows if row["refusal_mismatch"]]
+    top = sorted(rows, key=lambda row: (row["mean_abs_delta"], row["max_delta"]), reverse=True)[:top_n]
+    return {
+        "available": True,
+        "n_common": len(rows),
+        "baseline_n": len(baseline_scores),
+        "sensitivity_n": len(sensitivity_scores),
+        "missing_from_sensitivity": len({score.item_id for score in baseline_scores} - {score.item_id for score in sensitivity_scores}),
+        "missing_from_baseline": len({score.item_id for score in sensitivity_scores} - {score.item_id for score in baseline_scores}),
+        "overall_mean_abs_delta": round(mean(row["mean_abs_delta"] for row in rows), 4),
+        "refusal_mismatch_count": len(refusal_mismatches),
+        "refusal_mismatch_rate": round(len(refusal_mismatches) / len(rows), 4),
+        "by_dimension": by_dimension,
+        "top_disagreements": top,
+    }
+
+
 def interval_hypothesis_tests(scores: list[ScoreRecord], roles: dict[str, RoleCard]) -> dict[str, Any]:
     """Reframe the hand-written expected intervals as falsifiable predictions and test them.
 
@@ -457,6 +689,7 @@ def analyze_scores(
         key=lambda row: (row["underperformance"] + row["role_intrusion"], 1 - row["role_manifestation"]),
         reverse=True,
     )[:10]
+    mixed_gradient = agency_gradient_mixedlm(scores, roles, prompts)
     return {
         "overall": {
             "n_scores": len(scores),
@@ -476,7 +709,11 @@ def analyze_scores(
         "agency_effects": summarize_agency_effects(pairs),
         "role_confusion": role_confusion(enriched),
         "agency_gradient": agency_gradient(scores, roles),
-        "agency_gradient_mixedlm": agency_gradient_mixedlm(scores, roles, prompts),
+        "agency_gradient_mixedlm": mixed_gradient,
+        "agency_gradient_adjusted": agency_gradient_adjusted(scores, roles, prompts),
+        "refusal_mediation": refusal_mediation(scores, roles, prompts, mixed_gradient),
+        "score_distribution_diagnostics": score_distribution_diagnostics(scores),
+        "role_profile_design": role_profile_design(roles),
         "dimension_means_by_role": dimension_means(enriched, "role"),
         "dimension_means_by_agency_level": dimension_means(enriched, "agency_level"),
         "interval_hypothesis_tests": interval_hypothesis_tests(scores, roles),
@@ -501,7 +738,7 @@ def observations_markdown(analysis: dict[str, Any]) -> str:
     lines.append("")
 
     grad = analysis.get("agency_gradient_mixedlm", {})
-    lines.append("## Agency Gradient (mixed-effects: score ~ agency_level + (1|model)) [PRIMARY TEST]")
+    lines.append("## Agency Gradient (mixed-effects: score ~ agency_level + (1|model)) [JUDGE-SENSITIVE DIAGNOSTIC]")
     if grad.get("available"):
         lines.append(f"- n={grad.get('n')} across {grad.get('n_models')} models, {grad.get('n_agency_levels')} agency levels")
         for dim, row in grad.get("by_dimension", {}).items():
@@ -513,10 +750,56 @@ def observations_markdown(analysis: dict[str, Any]) -> str:
                 )
             else:
                 lines.append(f"- {dim}: not estimated ({row.get('error', 'n/a')})")
-        lines.append("  (* = agency_level slope significant at p<0.05; this is the falsifiable gradient claim.)")
+        lines.append("  (* = agency_level slope significant at p<0.05 under this judge.)")
     else:
         lines.append(f"- not available: {grad.get('error')}")
     lines.append("")
+
+    med = analysis.get("refusal_mediation", {})
+    if med.get("available"):
+        lines.append("## Refusal Mediation")
+        lines.append(
+            f"- Non-refusal subset: n={med.get('n_non_refusal')} of {med.get('n_all')} "
+            f"(refusal_rate={med.get('refusal_rate')})"
+        )
+        lines.append(
+            f"- Collapsed or direction-changed slopes after excluding refusals: "
+            f"{med.get('collapsed_or_changed_count')}/{len(DIMENSIONS)}"
+        )
+        for row in med.get("by_dimension", []):
+            lines.append(
+                f"- {row['dim']}: all={row.get('all_coef')} (p={row.get('all_pvalue')}), "
+                f"non-refusal={row.get('non_refusal_coef')} (p={row.get('non_refusal_pvalue')}), "
+                f"status={row.get('status')}"
+            )
+        lines.append("")
+
+    adjusted = analysis.get("agency_gradient_adjusted", {})
+    if adjusted.get("available"):
+        lines.append("## Adjusted Agency Gradient")
+        lines.append(
+            "- Model: score ~ agency_level + refusal + word_count_z + agency_mode + (1|model)"
+        )
+        for dim, row in adjusted.get("by_dimension", {}).items():
+            if row.get("converged"):
+                star = " *" if row.get("agency_level_significant_0_05") else ""
+                lines.append(
+                    f"- {dim}: agency_coef={row['agency_level_coef']} "
+                    f"[{row['agency_level_ci_low']}, {row['agency_level_ci_high']}], "
+                    f"p={row['agency_level_pvalue']}{star}; refusal_coef={row['refusal_coef']}"
+                )
+            else:
+                lines.append(f"- {dim}: not estimated ({row.get('error', 'n/a')})")
+        lines.append("")
+
+    dist = analysis.get("score_distribution_diagnostics", {}).get("overall", {})
+    if dist:
+        lines.append("## Score Distribution Diagnostics")
+        lines.append(
+            f"- all-perfect={dist.get('all_perfect_rate')}, "
+            f"all-perfect-with-issues={dist.get('all_perfect_with_issues_rate')}"
+        )
+        lines.append("")
 
     iht = analysis.get("interval_hypothesis_tests", {})
     if iht.get("_summary"):
