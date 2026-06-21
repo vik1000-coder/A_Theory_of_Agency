@@ -7,7 +7,7 @@ text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
 </style>
 <rect class="bg" x="0" y="0" width="920" height="362" rx="10"/>
 <text class="ink" x="24" y="30" font-size="18" font-weight="700">Non-refusal quality by role</text>
-<text class="muted" x="24" y="52" font-size="13">Refused outputs are excluded; darker cells are higher Grok-primary quality scores.</text>
+<text class="muted" x="24" y="52" font-size="13">Refused outputs are excluded; darker cells are higher primary-judge quality scores.</text>
 <text class="muted mono" x="206.0" y="72" text-anchor="middle" font-size="12">U</text>
 <text class="muted mono" x="288.0" y="72" text-anchor="middle" font-size="12">E</text>
 <text class="muted mono" x="370.0" y="72" text-anchor="middle" font-size="12">V</text>

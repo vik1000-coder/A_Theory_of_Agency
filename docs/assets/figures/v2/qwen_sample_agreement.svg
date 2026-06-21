@@ -19,7 +19,7 @@ text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
 <rect x="460" y="86" width="200" height="116" rx="8" fill="rgba(47,79,216,0.08)" stroke="#d9dee7"/>
 <text class="muted" x="474" y="114" font-size="12">post-strat mismatch</text>
 <text class="ink mono" x="474" y="154" font-size="28" font-weight="700">5.2%</text>
-<text class="muted" x="474" y="180" font-size="11">weighted to full v2 refusal rate</text>
+<text class="muted" x="474" y="180" font-size="11">weighted to full refusal rate</text>
 <rect x="678" y="86" width="200" height="116" rx="8" fill="rgba(47,79,216,0.08)" stroke="#d9dee7"/>
 <text class="muted" x="692" y="114" font-size="12">role-profile delta</text>
 <text class="ink mono" x="692" y="154" font-size="28" font-weight="700">0.3</text>

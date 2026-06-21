@@ -132,7 +132,7 @@ def _quality_heatmap(rows: list[dict[str, Any]]) -> str:
         height,
         "\n".join(body),
         "Non-refusal quality by role",
-        "Refused outputs are excluded; darker cells are higher Grok-primary quality scores.",
+        "Refused outputs are excluded; darker cells are higher primary-judge quality scores.",
     )
 
 
@@ -200,8 +200,8 @@ def generate_v2_figures(summary: dict[str, Any], docs_dir: Path) -> list[dict[st
             "local_refusal_by_model.svg",
             _bar_chart(
                 refusal_rows,
-                title="Local v2 refusal by model",
-                subtitle="DeepSeek is the refusal outlier; most refusals are over-refusals under Grok-primary scoring.",
+                title="Local refusal by model",
+                subtitle="DeepSeek is the refusal outlier; most refusals are over-refusals under primary-judge scoring.",
                 label_key="model",
                 series=[
                     ("refusal", "refusal_rate", PALETTE["blue"]),
@@ -232,7 +232,7 @@ def generate_v2_figures(summary: dict[str, Any], docs_dir: Path) -> list[dict[st
                 pct_values=False,
             ),
         )
-        figures.append({"title": "Role-profile fit", "path": rel, "caption": "Profile fit is the v2 replacement for a single monotone slope claim."})
+        figures.append({"title": "Role-profile fit", "path": rel, "caption": "Profile fit checks whether outputs match the role they were asked to perform."})
 
     robust = v2.get("judge_robustness", {})
     if robust.get("available"):
@@ -251,7 +251,7 @@ def generate_v2_figures(summary: dict[str, Any], docs_dir: Path) -> list[dict[st
             {
                 "label": "post-strat mismatch",
                 "value": _pct(post.get("refusal_mismatch_rate") if post.get("available") else None),
-                "note": "weighted to full v2 refusal rate",
+                "note": "weighted to full refusal rate",
             },
             {
                 "label": "role-profile delta",
@@ -268,12 +268,12 @@ def generate_v2_figures(summary: dict[str, Any], docs_dir: Path) -> list[dict[st
                 "The sample over-represents refusal cases; post-stratified metrics estimate full-run rates.",
             ),
         )
-        figures.append({"title": "Qwen sensitivity sample", "path": rel, "caption": "Judge robustness is sampled and post-stratified, not claimed as a full Qwen rerun."})
+        figures.append({"title": "Alternate-judge sample", "path": rel, "caption": "Judge robustness is sampled and post-stratified, not claimed as a full alternate-judge rescoring."})
 
     design_rows = v2.get("role_profile_design", {}).get("by_dimension", [])
     if design_rows:
         rel = _write_svg(out_dir, "role_profile_design.svg", _role_design_chart(design_rows))
-        figures.append({"title": "Role-card design", "path": rel, "caption": "The role cards themselves make the old one-slope outcome too blunt."})
+        figures.append({"title": "Role-card design", "path": rel, "caption": "The role cards are multi-dimensional; a single role-discretion slope is too blunt."})
 
     frontier = summary.get("v2_frontier", {})
     if frontier.get("available"):

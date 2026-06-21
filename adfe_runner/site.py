@@ -12,7 +12,10 @@ the page renders with no fetch/CORS issues (works on Pages and via file:// previ
 from __future__ import annotations
 
 import json
+import re
+from collections import defaultdict
 from pathlib import Path
+from statistics import mean
 from typing import Any
 
 import yaml
@@ -30,6 +33,195 @@ def _latest_dir(glob_pattern: str, required_file: str, base: Path) -> Path | Non
 
 def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
+
+def _load_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            rows.append(json.loads(line))
+    return rows
+
+
+def _safe_artifact_name(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("_")
+
+
+def _mean(values: list[float]) -> float | None:
+    return round(mean(values), 4) if values else None
+
+
+def _excerpt(text: str | None, limit: int = 320) -> str:
+    cleaned = " ".join((text or "").split())
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: limit - 1].rstrip() + "..."
+
+
+def _score_mean(row: dict[str, Any], family: str) -> float | None:
+    scores = row.get(family, {})
+    values = [float(scores[dim]) for dim in DIMENSIONS if scores.get(dim) is not None]
+    return _mean(values)
+
+
+def _primary_v2_scores_path(v2_dir: Path, primary_judge: str | None) -> Path | None:
+    if primary_judge:
+        direct = v2_dir / _safe_artifact_name(primary_judge) / "scores.jsonl"
+        if direct.is_file():
+            return direct
+    candidates = [p / "scores.jsonl" for p in v2_dir.iterdir() if p.is_dir() and (p / "scores.jsonl").is_file()]
+    return max(candidates, key=lambda p: p.stat().st_mtime) if candidates else None
+
+
+def _v2_topic_summary(scores: list[dict[str, Any]], prompts: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for score in scores:
+        topic = prompts.get(score.get("prompt_id"), {}).get("topic", "unknown")
+        grouped[topic].append(score)
+    rows: list[dict[str, Any]] = []
+    for topic, group in sorted(grouped.items()):
+        refused = [row for row in group if row.get("refusal") is True]
+        over = [row for row in refused if row.get("refusal_warranted") is False]
+        non_refusal = [row for row in group if row.get("refusal") is not True]
+        rows.append(
+            {
+                "topic": topic,
+                "n": len(group),
+                "n_refusal": len(refused),
+                "refusal_rate": round(len(refused) / len(group), 4) if group else None,
+                "over_refusal_rate": round(len(over) / len(group), 4) if group else None,
+                "non_refusal_quality_mean": _mean(
+                    [value for row in non_refusal if (value := _score_mean(row, "quality_scores")) is not None]
+                ),
+                "profile_fit_mean": _mean(
+                    [value for row in group if (value := _score_mean(row, "role_profile_scores")) is not None]
+                ),
+            }
+        )
+    return sorted(rows, key=lambda row: row.get("refusal_rate") or 0, reverse=True)
+
+
+def _v2_profile_interval_misses(analysis: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = analysis.get("role_profile", {}).get("interval_support", {}).get("rows", [])
+    misses = [row for row in rows if row.get("status") == "violated"]
+    return sorted(misses, key=lambda row: row.get("distance") or 0, reverse=True)[:12]
+
+
+def _v2_profile_examples(
+    analysis: dict[str, Any],
+    generations: dict[str, dict[str, Any]],
+    prompts: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows = []
+    for row in analysis.get("role_profile", {}).get("top_profile_mismatches", [])[:8]:
+        record = generations.get(row.get("item_id"), {})
+        prompt = prompts.get(row.get("prompt_id"), {})
+        rows.append(
+            {
+                **row,
+                "topic": prompt.get("topic"),
+                "task": prompt.get("task"),
+                "viewpoint": prompt.get("viewpoint"),
+                "output_excerpt": _excerpt(record.get("output")),
+            }
+        )
+    return rows
+
+
+def _v2_refusal_asymmetry_examples(
+    analysis: dict[str, Any],
+    scores: list[dict[str, Any]],
+    generations: dict[str, dict[str, Any]],
+    prompts: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    score_lookup = {
+        (score.get("cycle"), score.get("model"), score.get("role"), score.get("agency_mode"), score.get("prompt_id")): score
+        for score in scores
+    }
+    candidates: list[dict[str, Any]] = []
+    for pair in analysis.get("pair_metrics", []):
+        if pair.get("refusal_parity_gap") != 1:
+            continue
+        members = [
+            score_lookup.get((pair.get("cycle"), pair.get("model"), pair.get("role"), pair.get("agency_mode"), prompt_id))
+            for prompt_id in pair.get("prompt_ids", [])
+        ]
+        members = [member for member in members if member]
+        if len(members) != 2:
+            continue
+        refused = [member for member in members if member.get("refusal") is True]
+        answered = [member for member in members if member.get("refusal") is not True]
+        if not refused or not answered:
+            continue
+        left = refused[0]
+        right = answered[0]
+        left_prompt = prompts.get(left.get("prompt_id"), {})
+        right_prompt = prompts.get(right.get("prompt_id"), {})
+        left_record = generations.get(left.get("item_id"), {})
+        right_record = generations.get(right.get("item_id"), {})
+        candidates.append(
+            {
+                "pair": pair.get("pair_key"),
+                "topic": pair.get("topic_pair") or left_prompt.get("topic"),
+                "model": pair.get("model"),
+                "role": pair.get("role"),
+                "agency_mode": pair.get("agency_mode"),
+                "refused_prompt": left.get("prompt_id"),
+                "refused_viewpoint": left_prompt.get("viewpoint"),
+                "refused_warranted": left.get("refusal_warranted"),
+                "refused_issues": left.get("issues", [])[:3],
+                "refused_excerpt": _excerpt(left_record.get("output")),
+                "answered_prompt": right.get("prompt_id"),
+                "answered_viewpoint": right_prompt.get("viewpoint"),
+                "answered_quality_mean": _score_mean(right, "quality_scores"),
+                "answered_excerpt": _excerpt(right_record.get("output")),
+            }
+        )
+
+    candidates.sort(
+        key=lambda row: (
+            row.get("refused_warranted") is not False,
+            row.get("topic") or "",
+            row.get("model") or "",
+            row.get("role") or "",
+            row.get("agency_mode") or "",
+        )
+    )
+    selected: list[dict[str, Any]] = []
+    seen_topics: set[str] = set()
+    for row in candidates:
+        topic = str(row.get("topic") or "")
+        if topic in seen_topics and len(seen_topics) < 6:
+            continue
+        selected.append(row)
+        seen_topics.add(topic)
+        if len(selected) >= 6:
+            return selected
+    for row in candidates:
+        if row not in selected:
+            selected.append(row)
+        if len(selected) >= 6:
+            break
+    return selected
+
+
+def _v2_drilldowns(root: Path, run_dir: Path, analysis: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
+    prompts = {row["id"]: row for row in _load_jsonl(root / "data" / "prompts.jsonl") if row.get("id")}
+    generations = {
+        row["item_id"]: row
+        for row in _load_jsonl(run_dir / "generations.jsonl")
+        if row.get("item_id") and not row.get("error")
+    }
+    scores_path = _primary_v2_scores_path(run_dir / "v2", meta.get("primary_judge") or analysis.get("judge_model"))
+    scores = _load_jsonl(scores_path) if scores_path else []
+    return {
+        "refusal_asymmetry_examples": _v2_refusal_asymmetry_examples(analysis, scores, generations, prompts),
+        "topic_refusal": _v2_topic_summary(scores, prompts),
+        "profile_interval_misses": _v2_profile_interval_misses(analysis),
+        "profile_mismatch_examples": _v2_profile_examples(analysis, generations, prompts),
+    }
 
 
 def _wilson_interval(successes: int, n: int, z: float = 1.96) -> dict[str, Any]:
@@ -227,7 +419,7 @@ def _judge_sensitivity_block(run_dir: Path | None) -> dict[str, Any]:
     }
 
 
-def _v2_block(run_dir: Path | None) -> dict[str, Any]:
+def _v2_block(root: Path, run_dir: Path | None) -> dict[str, Any]:
     if not run_dir:
         return {}
     v2_dir = run_dir / "v2"
@@ -240,6 +432,7 @@ def _v2_block(run_dir: Path | None) -> dict[str, Any]:
     refusal = analysis.get("refusal", {})
     role_profile = analysis.get("role_profile", {})
     quality = analysis.get("quality_non_refusal", {})
+    drilldowns = _v2_drilldowns(root, run_dir, analysis, meta)
     return {
         "available": True,
         "meta": meta,
@@ -271,6 +464,7 @@ def _v2_block(run_dir: Path | None) -> dict[str, Any]:
         "quality_agency_correlations": analysis.get("role_profile_quality_correlations", {}),
         "judge_robustness": comparison,
         "statistical_checks": _v2_statistical_checks(analysis),
+        **drilldowns,
     }
 
 
@@ -428,7 +622,7 @@ def build_summary(root: Path, run_dir: Path | None, validation_dir: Path | None)
         reverse=True,
     )[:6]
 
-    v2 = _v2_block(run_dir)
+    v2 = _v2_block(root, run_dir)
     overall = analysis.get("overall", {})
     provenance = {
         "run_id": meta.get("run_id") or (run_dir.name if run_dir else None),
