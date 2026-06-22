@@ -43,6 +43,7 @@ from .io import (
     write_jsonl,
 )
 from .ollama import OllamaClient, OllamaError
+from .paper import build_paper_artifacts
 from .publication import generate_publication_artifacts
 from .prompting import build_generation_prompt
 from .schemas import (
@@ -52,6 +53,7 @@ from .schemas import (
     HumanRatingRecord,
     ScoreRecord,
     StudyConfig,
+    V2HumanRatingRecord,
     V2ScoreRecord,
     now_iso,
 )
@@ -86,6 +88,19 @@ def generation_options(config: StudyConfig) -> dict[str, Any]:
 
 def judge_options() -> dict[str, Any]:
     return {"temperature": 0.0, "top_p": 0.9, "num_predict": 900}
+
+
+def generation_policy_addendum(config: StudyConfig) -> str:
+    if not config.generation_policy_addendum_path:
+        return ""
+    path = resolve_path(config.generation_policy_addendum_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"generation policy addendum not found: {path}")
+    return path.read_text(encoding="utf-8").strip()
+
+
+def combine_addenda(*parts: str) -> str:
+    return "\n\n".join(part.strip() for part in parts if part and part.strip())
 
 
 def load_all(config_path: str) -> tuple[StudyConfig, list, Any, dict]:
@@ -167,6 +182,7 @@ def generate_records(
     error_path: Path | None = None,
 ) -> list[GenerationRecord]:
     options = generation_options(config)
+    config_addendum = generation_policy_addendum(config)
     existing_ids = existing_ids or set()
     records: list[GenerationRecord] = []
     total = len(selected)
@@ -183,7 +199,7 @@ def generate_records(
             prompt,
             role,
             packet,
-            addendum=state.active_generation_addendum,
+            addendum=combine_addenda(config_addendum, state.active_generation_addendum),
             agency_mode=agency_mode,
         )
         output = ""
@@ -206,7 +222,7 @@ def generate_records(
             generation_prompt=generation_prompt,
             output=output,
             created_at=now_iso(),
-            calibration_id="active" if state.active_generation_addendum or state.active_judge_addendum else None,
+            calibration_id="active" if config_addendum or state.active_generation_addendum or state.active_judge_addendum else None,
             error=error,
         )
         if error:
@@ -1326,63 +1342,193 @@ def latest_v2_sensitivity_scores_path(run_path: Path, primary_judge: str) -> Pat
     return max(candidates, key=lambda path: (path / "scores.jsonl").stat().st_mtime) / "scores.jsonl"
 
 
+def _scaled_v2_packet_quotas(max_items: int | None) -> dict[str, int]:
+    base = {
+        "refusal_asymmetry": 40,
+        "role_profile_miss": 40,
+        "judge_disagreement": 20,
+        "low_disagreement_control": 20,
+    }
+    if max_items is None:
+        return base
+    total = sum(base.values())
+    quotas = {key: int(max_items * value / total) for key, value in base.items()}
+    for key in base:
+        if base[key] and max_items >= len(base) and quotas[key] == 0:
+            quotas[key] = 1
+    while sum(quotas.values()) < max_items:
+        key = max(base, key=lambda item: (base[item] - quotas[item], item))
+        quotas[key] += 1
+    while sum(quotas.values()) > max_items:
+        key = max(quotas, key=lambda item: (quotas[item], item))
+        quotas[key] -= 1
+    return quotas
+
+
 def export_v2_rating_packet(config: StudyConfig, run_id: str, max_items: int | None = None) -> Path:
     path = run_dir(config, run_id)
     records = read_jsonl(path / "generations.jsonl", GenerationRecord)
     record_by_id = {record.item_id: record for record in records}
+    record_lookup = {
+        (record.cycle, record.model, record.role, record.agency_mode, record.prompt_id): record
+        for record in records
+    }
     primary_scores = read_jsonl(v2_score_path(path, config.judge_model), V2ScoreRecord)
     primary_by_id = {score.item_id: score for score in primary_scores}
     sensitivity_path = latest_v2_sensitivity_scores_path(path, config.judge_model)
     sensitivity_scores = read_jsonl(sensitivity_path, V2ScoreRecord) if sensitivity_path else []
     prompts = {prompt.id: prompt for prompt in load_prompts(config.prompts_path)}
+    roles = load_role_cards(config.role_cards_path)
+    analysis = analyze_v2_scores(primary_scores, list(prompts.values()), roles.by_id)
+    comparison = compare_v2_judges(primary_scores, sensitivity_scores, records) if sensitivity_scores else {}
+    quotas = _scaled_v2_packet_quotas(max_items)
     selected_ids: list[str] = []
     context: dict[str, dict[str, Any]] = {}
+    counts = {key: 0 for key in quotas}
+    sensitivity_by_id = {score.item_id: score for score in sensitivity_scores}
 
-    def add_item(item_id: str, reason: str, extra: dict[str, Any] | None = None) -> None:
+    def profile_fit(score: V2ScoreRecord) -> float:
+        return sum(score.role_profile_scores.values()) / max(1, len(score.role_profile_scores))
+
+    def judge_delta_rows() -> list[dict[str, Any]]:
+        rows = []
+        for item_id, primary in primary_by_id.items():
+            sensitivity = sensitivity_by_id.get(item_id)
+            if sensitivity is None:
+                continue
+            quality_delta = ""
+            if not primary.refusal and not sensitivity.refusal:
+                quality_delta = round(
+                    sum(abs(primary.quality_scores[dim] - sensitivity.quality_scores[dim]) for dim in DIMENSIONS)
+                    / len(DIMENSIONS),
+                    4,
+                )
+            profile_delta = round(
+                sum(abs(primary.role_profile_scores[dim] - sensitivity.role_profile_scores[dim]) for dim in DIMENSIONS)
+                / len(DIMENSIONS),
+                4,
+            )
+            refusal_mismatch = primary.refusal != sensitivity.refusal
+            rows.append(
+                {
+                    "item_id": item_id,
+                    "primary_judge": primary.judge_model,
+                    "sensitivity_judge": sensitivity.judge_model,
+                    "primary_refusal": primary.refusal,
+                    "sensitivity_refusal": sensitivity.refusal,
+                    "refusal_mismatch": refusal_mismatch,
+                    "quality_mean_abs_delta_non_refusal": quality_delta,
+                    "role_profile_mean_abs_delta": profile_delta,
+                    "total_delta": (quality_delta if isinstance(quality_delta, float) else 0.0) + profile_delta,
+                }
+            )
+        return rows
+
+    def add_item(item_id: str, category: str, reason: str, extra: dict[str, Any] | None = None) -> bool:
         if item_id not in record_by_id or item_id not in primary_by_id:
-            return
+            return False
+        if category in quotas and counts[category] >= quotas[category]:
+            return False
         if item_id not in selected_ids:
             selected_ids.append(item_id)
+            if category in counts:
+                counts[category] += 1
         entry = context.setdefault(item_id, {"selection_reasons": []})
+        entry.setdefault("selection_category", category)
         if reason not in entry["selection_reasons"]:
             entry["selection_reasons"].append(reason)
         if extra:
             entry.update(extra)
+        return True
 
-    if sensitivity_scores:
-        comparison = compare_v2_judges(primary_scores, sensitivity_scores, records)
-        for row in comparison.get("top_disagreements", [])[:80]:
-            reason = "v2_judge_refusal_mismatch" if row.get("refusal_mismatch") else "v2_high_judge_disagreement"
-            add_item(row["item_id"], reason, {"comparison": row})
+    for pair in sorted(
+        analysis.get("pair_metrics", []),
+        key=lambda row: (row.get("refusal_parity_gap") or 0, row.get("non_refusal_quality_gap") or 0),
+        reverse=True,
+    ):
+        if counts.get("refusal_asymmetry", 0) >= quotas.get("refusal_asymmetry", 0):
+            break
+        if not pair.get("refusal_parity_gap"):
+            continue
+        prompt_ids = list(pair.get("prompt_ids") or [])
+        pair_records = [
+            record_lookup.get((pair.get("cycle", 0), pair.get("model"), pair.get("role"), pair.get("agency_mode"), prompt_id))
+            for prompt_id in prompt_ids
+        ]
+        pair_records = [record for record in pair_records if record is not None]
+        refused_records = [record for record in pair_records if primary_by_id.get(record.item_id) and primary_by_id[record.item_id].refusal]
+        answered_records = [record for record in pair_records if primary_by_id.get(record.item_id) and not primary_by_id[record.item_id].refusal]
+        for record in refused_records:
+            paired = answered_records[0] if answered_records else None
+            add_item(
+                record.item_id,
+                "refusal_asymmetry",
+                "v2_refusal_asymmetry",
+                {
+                    "pair": pair,
+                    "paired_item_id": paired.item_id if paired else "",
+                    "paired_prompt_id": paired.prompt_id if paired else "",
+                    "pair_key": pair.get("pair_key", ""),
+                },
+            )
 
-    analysis = analyze_v2_scores(primary_scores, list(prompts.values()), load_role_cards(config.role_cards_path).by_id)
-    for row in analysis.get("role_profile", {}).get("top_profile_mismatches", [])[:40]:
-        add_item(row["item_id"], "v2_role_profile_mismatch", {"profile_mismatch": row})
+    for row in analysis.get("role_profile", {}).get("top_profile_mismatches", []):
+        if counts.get("role_profile_miss", 0) >= quotas.get("role_profile_miss", 0):
+            break
+        add_item(row["item_id"], "role_profile_miss", "v2_role_profile_mismatch", {"profile_mismatch": row})
+    for score in sorted(primary_scores, key=lambda item: (profile_fit(item), item.model, item.role, item.prompt_id)):
+        if counts.get("role_profile_miss", 0) >= quotas.get("role_profile_miss", 0):
+            break
+        add_item(
+            score.item_id,
+            "role_profile_miss",
+            "v2_low_role_profile_fit",
+            {"profile_mismatch": {"item_id": score.item_id, "profile_fit_mean": round(profile_fit(score), 4)}},
+        )
 
-    borderline_refusals = [
-        score
-        for score in primary_scores
-        if score.refusal and (score.refusal_warranted is False or score.refusal_warranted is None)
-    ]
-    for score in sorted(borderline_refusals, key=lambda item: (item.refusal_warranted is not False, item.model, item.role))[:40]:
-        add_item(score.item_id, "v2_refusal_borderline")
+    for row in comparison.get("top_disagreements", []):
+        if counts.get("judge_disagreement", 0) >= quotas.get("judge_disagreement", 0):
+            break
+        reason = "v2_judge_refusal_mismatch" if row.get("refusal_mismatch") else "v2_high_judge_disagreement"
+        add_item(row["item_id"], "judge_disagreement", reason, {"comparison": row})
+    all_judge_deltas = judge_delta_rows()
+    for row in sorted(
+        all_judge_deltas,
+        key=lambda item: (bool(item.get("refusal_mismatch")), item.get("total_delta") or 0, item["item_id"]),
+        reverse=True,
+    ):
+        if counts.get("judge_disagreement", 0) >= quotas.get("judge_disagreement", 0):
+            break
+        reason = "v2_judge_refusal_mismatch" if row.get("refusal_mismatch") else "v2_high_judge_disagreement"
+        add_item(row["item_id"], "judge_disagreement", reason, {"comparison": row})
 
-    if sensitivity_scores and max_items is not None:
-        comparison = compare_v2_judges(primary_scores, sensitivity_scores, records)
-        controls = comparison.get("low_disagreement_controls", [])
-        for row in controls[: max(4, max_items // 10)]:
-            add_item(row["item_id"], "v2_low_disagreement_control", {"comparison": row})
+    for row in comparison.get("low_disagreement_controls", []):
+        if counts.get("low_disagreement_control", 0) >= quotas.get("low_disagreement_control", 0):
+            break
+        add_item(row["item_id"], "low_disagreement_control", "v2_low_disagreement_control", {"comparison": row})
+    for row in sorted(
+        all_judge_deltas,
+        key=lambda item: (bool(item.get("refusal_mismatch")), item.get("total_delta") or 0, item["item_id"]),
+    ):
+        if counts.get("low_disagreement_control", 0) >= quotas.get("low_disagreement_control", 0):
+            break
+        if row.get("refusal_mismatch"):
+            continue
+        add_item(row["item_id"], "low_disagreement_control", "v2_low_disagreement_control", {"comparison": row})
 
-    selected_ids = selected_ids[:max_items] if max_items is not None else selected_ids
+    if max_items is not None:
+        selected_ids = selected_ids[:max_items]
     rows = []
     for record in [record_by_id[item_id] for item_id in selected_ids]:
         prompt = prompts.get(record.prompt_id)
         score = primary_by_id[record.item_id]
         item_context = context.get(record.item_id, {})
         comparison = item_context.get("comparison", {})
+        pair = item_context.get("pair", {})
         rows.append(
             {
                 "item_id": record.item_id,
+                "selection_category": item_context.get("selection_category", ""),
                 "selection_reason": "; ".join(item_context.get("selection_reasons", [])),
                 "topic": prompt.topic if prompt else "",
                 "task": prompt.task if prompt else "",
@@ -1392,10 +1538,18 @@ def export_v2_rating_packet(config: StudyConfig, run_id: str, max_items: int | N
                 "assigned_role": record.role,
                 "agency_mode": record.agency_mode,
                 "prompt_id": record.prompt_id,
+                "pair_key": item_context.get("pair_key") or pair.get("pair_key", ""),
+                "paired_prompt_id": item_context.get("paired_prompt_id", ""),
+                "paired_item_id": item_context.get("paired_item_id", ""),
                 "source_packet_id": record.source_packet_id,
                 "output": record.output,
+                "rater_id": "",
                 "human_refusal": "",
                 "human_refusal_warranted": "",
+                "human_role_fit_pass": "",
+                "human_viewpoint_symmetry_pass": "",
+                "human_primary_failure_reason": "",
+                "human_inferred_role": "",
                 "human_quality_U": "",
                 "human_quality_E": "",
                 "human_quality_V": "",
@@ -1403,7 +1557,6 @@ def export_v2_rating_packet(config: StudyConfig, run_id: str, max_items: int | N
                 "human_quality_D": "",
                 "human_quality_M": "",
                 "human_role_profile_fit": "",
-                "human_inferred_role": "",
                 "notes": "",
                 "primary_judge": score.judge_model,
                 "primary_refusal": score.refusal,
@@ -1419,6 +1572,7 @@ def export_v2_rating_packet(config: StudyConfig, run_id: str, max_items: int | N
         )
     fieldnames = [
         "item_id",
+        "selection_category",
         "selection_reason",
         "topic",
         "task",
@@ -1428,10 +1582,18 @@ def export_v2_rating_packet(config: StudyConfig, run_id: str, max_items: int | N
         "assigned_role",
         "agency_mode",
         "prompt_id",
+        "pair_key",
+        "paired_prompt_id",
+        "paired_item_id",
         "source_packet_id",
         "output",
+        "rater_id",
         "human_refusal",
         "human_refusal_warranted",
+        "human_role_fit_pass",
+        "human_viewpoint_symmetry_pass",
+        "human_primary_failure_reason",
+        "human_inferred_role",
         "human_quality_U",
         "human_quality_E",
         "human_quality_V",
@@ -1439,7 +1601,6 @@ def export_v2_rating_packet(config: StudyConfig, run_id: str, max_items: int | N
         "human_quality_D",
         "human_quality_M",
         "human_role_profile_fit",
-        "human_inferred_role",
         "notes",
         "primary_judge",
         "primary_refusal",
@@ -1716,6 +1877,117 @@ def command_import_ratings(args: argparse.Namespace) -> int:
     return 0
 
 
+def summarize_v2_human_ratings(ratings: list[V2HumanRatingRecord]) -> dict[str, Any]:
+    by_item: dict[str, list[V2HumanRatingRecord]] = {}
+    for rating in ratings:
+        by_item.setdefault(rating.item_id, []).append(rating)
+
+    fields = ["refusal_warranted", "role_fit_pass", "viewpoint_symmetry_pass"]
+    label_counts: dict[str, dict[str, int]] = {}
+    agreements: dict[str, dict[str, Any]] = {}
+    for field in fields:
+        counts = {"true": 0, "false": 0, "missing": 0}
+        agreement_items = 0
+        comparable_items = 0
+        for rating in ratings:
+            value = getattr(rating, field)
+            if value is True:
+                counts["true"] += 1
+            elif value is False:
+                counts["false"] += 1
+            else:
+                counts["missing"] += 1
+        for item_ratings in by_item.values():
+            values = [
+                getattr(rating, field)
+                for rating in item_ratings
+                if getattr(rating, field) is not None
+            ]
+            if len(values) < 2:
+                continue
+            comparable_items += 1
+            if len(set(values)) == 1:
+                agreement_items += 1
+        label_counts[field] = counts
+        agreements[field] = {
+            "available": comparable_items > 0,
+            "n_items": comparable_items,
+            "agreement_items": agreement_items,
+            "agreement_rate": round(agreement_items / comparable_items, 4) if comparable_items else None,
+        }
+
+    reason_counts: dict[str, int] = {}
+    for rating in ratings:
+        reason = (rating.primary_failure_reason or "").strip() or "missing"
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+    return {
+        "schema": "adfe_v2_human_calibration.v1",
+        "n_ratings": len(ratings),
+        "n_items": len(by_item),
+        "n_raters": len({rating.rater_id for rating in ratings}),
+        "label_counts": label_counts,
+        "rater_agreement": agreements,
+        "primary_failure_reason_counts": dict(sorted(reason_counts.items())),
+        "interpretation": (
+            "Human ratings calibrate the refusal, role-fit, and viewpoint-symmetry judge labels. "
+            "They should be reported alongside judge metrics, not substituted for the full-run estimates."
+        ),
+    }
+
+
+def command_import_ratings_v2(args: argparse.Namespace) -> int:
+    config = load_config(effective_config_path(args.config, args.run_id))
+    path = run_dir(config, args.run_id)
+    generations = {record.item_id for record in read_jsonl(path / "generations.jsonl", GenerationRecord)}
+    rows = read_csv(resolve_path(args.ratings))
+    ratings: list[V2HumanRatingRecord] = []
+    errors = []
+    for row_no, row in enumerate(rows, start=2):
+        item_id = row.get("item_id", "").strip()
+        if item_id not in generations:
+            errors.append(f"row {row_no}: unknown item_id {item_id}")
+            continue
+        ratings.append(
+            V2HumanRatingRecord(
+                run_id=args.run_id,
+                item_id=item_id,
+                rater_id=row.get("rater_id", "").strip() or "anonymous",
+                refusal_warranted=parse_optional_bool(
+                    row.get("human_refusal_warranted", "") or row.get("refusal_warranted", "")
+                ),
+                role_fit_pass=parse_optional_bool(
+                    row.get("human_role_fit_pass", "") or row.get("role_fit_pass", "")
+                ),
+                viewpoint_symmetry_pass=parse_optional_bool(
+                    row.get("human_viewpoint_symmetry_pass", "") or row.get("viewpoint_symmetry_pass", "")
+                ),
+                primary_failure_reason=(
+                    row.get("human_primary_failure_reason", "") or row.get("primary_failure_reason", "")
+                ).strip()
+                or None,
+                notes=row.get("notes", ""),
+                imported_at=now_iso(),
+            )
+        )
+    if errors:
+        for error in errors[:20]:
+            console.print(f"[red]{error}[/red]")
+        return 2
+    out_path = path / "v2" / "human_ratings.jsonl"
+    existing = read_jsonl(out_path, V2HumanRatingRecord)
+    by_key = {(rating.item_id, rating.rater_id): rating for rating in existing}
+    for rating in ratings:
+        by_key[(rating.item_id, rating.rater_id)] = rating
+    merged = list(by_key.values())
+    write_jsonl(out_path, merged)
+    summary = summarize_v2_human_ratings(merged)
+    write_json(path / "v2" / "human_rating_summary.json", summary)
+    console.print(f"Imported {len(ratings)} v2 human ratings into {out_path}")
+    console.print(f"Wrote v2 human summary to {path / 'v2' / 'human_rating_summary.json'}")
+    return 0
+
+
 def command_publish_artifacts(args: argparse.Namespace) -> int:
     _effective_path, config, prompts, roles_file, _packets = load_all_for_run(args.config, args.run_id)
     path = run_dir(config, args.run_id)
@@ -1732,6 +2004,20 @@ def command_publish_artifacts(args: argparse.Namespace) -> int:
     )
     for name, artifact_path in artifacts.items():
         console.print(f"{name}: {artifact_path}")
+    return 0
+
+
+def command_build_paper_artifacts(args: argparse.Namespace) -> int:
+    summary = build_paper_artifacts(
+        root=Path.cwd(),
+        baseline_run_id=args.baseline_run_id,
+        remediation_run_id=args.remediation_run_id,
+        frontier_run_id=args.frontier_run_id,
+        out_dir=resolve_path(args.out_dir),
+    )
+    console.print(f"Wrote paper artifacts to {summary['tables_dir']}")
+    console.print(f"baseline_run_id={summary['baseline_run_id']}")
+    console.print(f"remediation_available={summary['remediation']['available']}")
     return 0
 
 
@@ -1849,7 +2135,7 @@ def command_repair_run(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="adfe_runner")
-    parser.add_argument("--config", default="configs/publication_pilot.yml")
+    parser.add_argument("--config", default="configs/v2_clean_local_grok.yml")
     sub = parser.add_subparsers(dest="command", required=True)
 
     doctor = sub.add_parser("doctor")
@@ -1943,11 +2229,24 @@ def build_parser() -> argparse.ArgumentParser:
     import_ratings.add_argument("--ratings", required=True)
     import_ratings.set_defaults(func=command_import_ratings)
 
+    import_ratings_v2 = sub.add_parser("import-ratings-v2")
+    import_ratings_v2.add_argument("--config", default=argparse.SUPPRESS)
+    import_ratings_v2.add_argument("--run-id", required=True)
+    import_ratings_v2.add_argument("--ratings", required=True)
+    import_ratings_v2.set_defaults(func=command_import_ratings_v2)
+
     publish_artifacts = sub.add_parser("publish-artifacts")
     publish_artifacts.add_argument("--config", default=argparse.SUPPRESS)
     publish_artifacts.add_argument("--run-id", required=True)
     publish_artifacts.add_argument("--max-calibration-items", type=int, default=120)
     publish_artifacts.set_defaults(func=command_publish_artifacts)
+
+    build_paper = sub.add_parser("build-paper-artifacts")
+    build_paper.add_argument("--baseline-run-id", default="adfe_v2_clean_local_grok")
+    build_paper.add_argument("--remediation-run-id", default="adfe_role_policy_remediation_grok")
+    build_paper.add_argument("--frontier-run-id", default="adfe_v2_frontier_grok_exploratory")
+    build_paper.add_argument("--out-dir", default="paper/neurips_workshop/generated")
+    build_paper.set_defaults(func=command_build_paper_artifacts)
 
     audit_run_parser = sub.add_parser("audit-run")
     audit_run_parser.add_argument("--config", default=argparse.SUPPRESS)

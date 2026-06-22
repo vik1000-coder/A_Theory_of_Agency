@@ -44,7 +44,7 @@ def test_interval_distance():
 
 
 def test_analyze_scores_includes_pair_metrics():
-    config = load_config(ROOT / "configs/publication_pilot.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml")
     prompts = load_prompts(ROOT / config.prompts_path)
     roles = load_role_cards(ROOT / config.role_cards_path)
     score_a = make_score(
@@ -70,7 +70,7 @@ def test_analyze_scores_includes_pair_metrics():
 
 
 def test_pair_metrics_group_by_agency_mode():
-    config = load_config(ROOT / "configs/publication_pilot.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml")
     prompts = load_prompts(ROOT / config.prompts_path)
     roles = load_role_cards(ROOT / config.role_cards_path)
     base_scores = {"U": 0.9, "E": 0.9, "V": 0.8, "C": 0.3, "D": 0.2, "M": 0.9}
@@ -150,7 +150,7 @@ def test_role_profile_design_reports_non_monotone_expected_profiles():
 
 
 def test_analyze_scores_includes_refusal_mediation_and_design_diagnostics():
-    config = load_config(ROOT / "configs/publication_pilot.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml")
     prompts = load_prompts(ROOT / config.prompts_path)
     roles = load_role_cards(ROOT / config.role_cards_path)
     scores = [

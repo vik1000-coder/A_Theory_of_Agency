@@ -81,7 +81,7 @@ def test_detect_refusal():
 
 
 def test_score_generation_with_fake_judge():
-    config = load_config(ROOT / "configs/publication_pilot.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml")
     prompts = load_prompts(ROOT / config.prompts_path)
     roles = load_role_cards(ROOT / config.role_cards_path)
     packets = load_source_packets(ROOT / config.source_packets_dir)
@@ -120,7 +120,7 @@ def test_score_generation_with_fake_judge():
 
 
 def test_score_generation_retries_malformed_json():
-    config = load_config(ROOT / "configs/publication_pilot.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml")
     prompts = load_prompts(ROOT / config.prompts_path)
     roles = load_role_cards(ROOT / config.role_cards_path)
     packets = load_source_packets(ROOT / config.source_packets_dir)
@@ -160,7 +160,7 @@ def test_score_generation_retries_malformed_json():
 
 
 def test_score_generation_rejects_errored_record():
-    config = load_config(ROOT / "configs/publication_pilot.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml")
     prompts = load_prompts(ROOT / config.prompts_path)
     roles = load_role_cards(ROOT / config.role_cards_path)
     packets = load_source_packets(ROOT / config.source_packets_dir)
@@ -195,7 +195,7 @@ def test_score_generation_rejects_errored_record():
 
 
 def test_generation_prompt_agency_modes():
-    config = load_config(ROOT / "configs/publication_pilot.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml")
     prompts = load_prompts(ROOT / config.prompts_path)
     roles = load_role_cards(ROOT / config.role_cards_path)
     packets = load_source_packets(ROOT / config.source_packets_dir)
@@ -213,7 +213,7 @@ def test_generation_prompt_agency_modes():
 
 
 def test_refusal_cap_applies_even_with_high_judge_scores():
-    config = load_config(ROOT / "configs/publication_pilot.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml")
     prompts = load_prompts(ROOT / config.prompts_path)
     roles = load_role_cards(ROOT / config.role_cards_path)
     packets = load_source_packets(ROOT / config.source_packets_dir)
@@ -251,7 +251,7 @@ def test_refusal_cap_applies_even_with_high_judge_scores():
 
 
 def test_rule_refusal_overrides_false_negative_judge_label():
-    config = load_config(ROOT / "configs/publication_pilot.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml")
     prompts = load_prompts(ROOT / config.prompts_path)
     roles = load_role_cards(ROOT / config.role_cards_path)
     packets = load_source_packets(ROOT / config.source_packets_dir)

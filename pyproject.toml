@@ -1,7 +1,7 @@
 [project]
 name = "adfe-runner"
 version = "0.1.0"
-description = "Local Agency-Dependent Fairness Evaluation harness for Ollama models"
+description = "Role-conditioned fairness evaluation harness for civic AI systems"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
 dependencies = [

@@ -1,0 +1,9 @@
+run_id,metric,value
+adfe_v2_frontier_grok_exploratory,n_scores,630
+adfe_v2_frontier_grok_exploratory,n_non_refusal,594
+adfe_v2_frontier_grok_exploratory,refusal_rate,0.0571
+adfe_v2_frontier_grok_exploratory,over_refusal_rate,0.0317
+adfe_v2_frontier_grok_exploratory,warranted_refusal_rate_among_refusals,0.4444
+adfe_v2_frontier_grok_exploratory,one_sided_refusal_rate,0.0317
+adfe_v2_frontier_grok_exploratory,one_sided_refusal_count,4
+adfe_v2_frontier_grok_exploratory,mean_non_refusal_quality,0.9256

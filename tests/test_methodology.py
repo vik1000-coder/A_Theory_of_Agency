@@ -53,17 +53,17 @@ def make_score(model: str, role: str, scores: dict[str, float], **checks) -> Sco
 # ---------- Tier 1: de-confounding ----------
 
 def test_frozen_is_default_and_calibration_flagged(tmp_path):
-    config = load_config(ROOT / "configs/clean_local.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/clean_local.yml")
     object.__setattr__(config, "runs_dir", str(tmp_path))
     # Default iterate path: calibration not active -> not contaminated, judge recorded.
-    _id, path = init_run(config, "configs/clean_local.yml", ["llama3.2:3b"], frozen_config=True, calibration_active=False)
+    _id, path = init_run(config, "archives/workshop_legacy_20260622/configs/clean_local.yml", ["llama3.2:3b"], frozen_config=True, calibration_active=False)
     meta = RunMeta.model_validate(read_json(path / "run_meta.json"))
     assert meta.frozen_config is True
     assert meta.calibration_active is False
     assert meta.contaminated is False
     assert meta.judge_model == "qwen3:8b"
     # Opt-in calibration must mark the run contaminated, stickily.
-    _id2, path2 = init_run(config, "configs/clean_local.yml", ["llama3.2:3b"], frozen_config=False, calibration_active=True)
+    _id2, path2 = init_run(config, "archives/workshop_legacy_20260622/configs/clean_local.yml", ["llama3.2:3b"], frozen_config=False, calibration_active=True)
     meta2 = RunMeta.model_validate(read_json(path2 / "run_meta.json"))
     assert meta2.calibration_active is True
     assert meta2.contaminated is True
@@ -167,7 +167,7 @@ def test_routed_client_requires_key_for_api_models(monkeypatch):
 
 
 def test_doctor_uses_routed_client_for_remote_models(monkeypatch, tmp_path):
-    config = load_config(ROOT / "configs/clean_local.yml").model_copy(update={"default_models": ["xai:grok-test"]})
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/clean_local.yml").model_copy(update={"default_models": ["xai:grok-test"]})
     config_path = tmp_path / "frontier.yml"
     config_path.write_text(yaml.safe_dump(config.model_dump(mode="json")), encoding="utf-8")
     seen: list[list[str]] = []

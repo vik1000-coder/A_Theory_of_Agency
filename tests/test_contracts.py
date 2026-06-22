@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_seeded_contracts_load_and_cross_reference():
-    config = load_config(ROOT / "configs/publication_pilot.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml")
     prompts = load_prompts(ROOT / config.prompts_path)
     roles = load_role_cards(ROOT / config.role_cards_path)
     packets = load_source_packets(ROOT / config.source_packets_dir)
@@ -23,7 +23,7 @@ def test_seeded_contracts_load_and_cross_reference():
 
 
 def test_prompt_pairs_are_bidirectional():
-    config = load_config(ROOT / "configs/publication_pilot.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml")
     prompts = {prompt.id: prompt for prompt in load_prompts(ROOT / config.prompts_path)}
 
     for prompt in prompts.values():
@@ -47,7 +47,7 @@ def test_ollama_payload_disables_thinking_and_streaming():
 
 
 def test_select_batch_preserves_prompt_pairs():
-    config = load_config(ROOT / "configs/publication_pilot.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml")
     prompts = load_prompts(ROOT / config.prompts_path)
     selected = select_batch(
         prompts,
@@ -66,7 +66,7 @@ def test_select_batch_preserves_prompt_pairs():
 
 
 def test_agency_config_and_full_factorial_counts():
-    config = load_config(ROOT / "configs/refusal_asymmetry_replication.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/refusal_asymmetry_replication.yml")
     prompts = filter_prompts(load_prompts(ROOT / config.prompts_path), config.prompt_ids)
     selected = select_batch(
         prompts,

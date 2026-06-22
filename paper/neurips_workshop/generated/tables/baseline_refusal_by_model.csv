@@ -1,0 +1,6 @@
+model,n,n_refusal,non_refusal_quality_C,non_refusal_quality_D,non_refusal_quality_E,non_refusal_quality_M,non_refusal_quality_U,non_refusal_quality_V,non_refusal_quality_n,over_refusal_rate,refusal_rate,role_profile_fit_mean,warranted_refusal_rate
+deepseek-r1:1.5b,420,174,0.3892,0.377,0.5224,0.8699,0.435,0.5488,246,0.4071,0.4143,0.3119,0.0172
+gemma3:1b,420,22,0.5934,0.5689,0.6676,0.9509,0.7529,0.6833,398,0.0429,0.0524,0.6144,0.1818
+llama3.2:1b,420,66,0.6271,0.6172,0.6999,0.9583,0.6907,0.7429,354,0.1405,0.1571,0.5615,0.0758
+llama3.2:3b,420,23,0.7143,0.6639,0.7888,0.971,0.8009,0.8019,397,0.05,0.0548,0.6772,0.087
+phi3:mini,420,15,0.713,0.6864,0.7994,0.979,0.7753,0.7963,405,0.0143,0.0357,0.6988,0.2667

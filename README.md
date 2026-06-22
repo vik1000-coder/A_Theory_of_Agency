@@ -1,219 +1,187 @@
-# ADFE Runner
+# Role-Conditioned Fairness Evaluation for Civic AI
 
-Local research harness for Agency-Dependent Fairness Evaluation (ADFE).
+This repository supports a role-counterfactual evaluation of civic AI systems. The central
+question is: **does changing the assigned civic role change refusal behavior, viewpoint
+symmetry, and role-fit behavior on the same lawful political tasks?**
 
-The harness runs role-counterfactual political AI evaluations against local Ollama models,
-scores outputs on the six Agency-Dependent Fairness dimensions with an LLM judge that is
-first **validated against human-labeled datasets**, and tests whether role-conditioned behavior
-survives artifact-integrity gates, judge-sensitivity checks, refusal-mediation diagnostics, and
-paired-viewpoint asymmetry tests.
+The project treats role prompts as policy-bearing deployment configuration, not harmless
+wording. A civic assistant, advocate, mediator, government-information bot, or campaign aide can
+face the same prompt and source packet, but each role carries different obligations. The harness
+therefore evaluates role as an experimental variable.
 
-The practical utility is not just "another benchmark." ADFE is a release-gate pattern for civic AI:
-version the role prompt, freeze the run config, test mirrored lawful viewpoints, validate the judge,
-compare judges, and keep the artifacts needed for later governance or model-risk review.
+**Public site:** https://vik1000-coder.github.io/A_Theory_of_Agency/
 
-**Public site:** https://vik1000-coder.github.io/A_Theory_of_Agency/ — problem, data, judge
-validation, judge sensitivity, and findings (regenerated from run artifacts; see [`docs/UPDATING.md`](docs/UPDATING.md)).
+The active submission package is under [`paper/neurips_workshop/`](paper/neurips_workshop/).
+Legacy narrative reports and pre-workshop configs are archived under
+[`archives/workshop_legacy_20260622/`](archives/workshop_legacy_20260622/).
 
-**Full report:** [`report/adfe_report.tex`](report/adfe_report.tex) → [PDF](report/adfe_report.pdf)
-(also at `/adfe_report.pdf` on the site). Rebuild with `cd report && latexmk -pdf adfe_report.tex`.
+## Canonical Story
+
+The workshop version reports one baseline evaluation and one directly matched remediation
+evaluation:
+
+1. **Baseline evaluation:** `adfe_v2_clean_local_grok`
+   - 2,100 judged rows.
+   - Five local generator models.
+   - Seven civic roles.
+   - Thirty civic prompts across six U.S. policy topics.
+   - Explicit and implicit role-prompt conditions.
+   - `xai:grok-4.3` as primary judge.
+
+2. **Remediation evaluation:** `adfe_role_policy_remediation_grok`
+   - Same models, prompts, roles, source packets, agency modes, and judge.
+   - Adds an executable role-policy addendum with allowed help, refusal criteria, source
+     requirements, uncertainty language, escalation triggers, and viewpoint parity.
+   - Compared to baseline by matched `(model, role, agency_mode, prompt_id)` keys.
+
+3. **Calibration and robustness:**
+   - Alternate-judge sensitivity on a stratified 300-row sample.
+   - A 120-item two-rater human review packet:
+     40 refusal-asymmetry examples, 40 role-profile misses, 20 judge-disagreement examples,
+     and 20 low-disagreement controls.
+
+The paper claim is intentionally narrow: role prompts can change civic safety and fairness
+outcomes, so deployed civic AI systems should version, test, and monitor role policies.
 
 ## Setup
 
 ```bash
-cd ~/Developer/A_Theory_of_Agency
 uv sync --extra dev
-uv run python -m adfe_runner doctor
+uv run pytest
+uv run python -m adfe_runner doctor --config configs/v2_clean_local_grok.yml
 ```
 
-## Public site
+`doctor` checks config integrity, prompt/source cross-references, prompt-pair analogy, and model
+availability.
 
-A GitHub Pages site under [`docs/`](docs/) presents the problem, data, judge validation, and
-analysis. It renders from `docs/data/summary.js`, which is generated from run artifacts:
-
-```bash
-uv run python -m adfe_runner build-site --run-id <run_id>
-```
-
-Commit and push `docs/` and Pages redeploys. Full workflow: [`docs/UPDATING.md`](docs/UPDATING.md).
-
-## Methodology guardrails
-
-The harness was hardened after an audit found the original pipeline could manufacture its
-own effect. The current invariants:
-
-- **Held-out judge.** The judge (`qwen3:8b`) must not be in the audited set. `configs/clean_local.yml`
-  audits the non-qwen local models so the judge never scores itself or a same-family model.
-- **Frozen by default.** `iterate` no longer tunes prompts. The auto-calibration loop is a
-  dev tool, opt-in via `--calibrate`, and any run that uses it is flagged `contaminated` in
-  `run_meta.json`. Never cite numbers from a contaminated run.
-- **Blinded role inference.** Role inference is a separate judge pass with the assigned role
-  hidden (`blind_role_inference`), so it is not circular.
-- **Non-circular diagnostics.** The mixed-effects agency gradient (`score ~ agency_level + (1|model)`)
-  is reported with raw dimension means, refusal-mediation slopes, score-distribution diagnostics,
-  and role-card design checks. Role-fit (distance from hand-written bands) is descriptive only.
-- **Validated judge.** Run `validate-judge` (below) before trusting judge scores.
-- **Judge sensitivity.** Re-judge completed runs with an alternate judge before treating
-  slope directions as robust.
-- **Analogous pairs.** `doctor` audits that viewpoint pairs match on everything but viewpoint.
-
-## Validate the judge (Tier-0 gate)
-
-Validate the judge against human-labeled public datasets before trusting its scores — no
-hand-rating needed. Two tasks: **safety** (XSTest → the M dimension) and **factuality**
-(TruthfulQA → the E dimension). Fetch the datasets (CC-BY etc., not redistributed here):
-
-```bash
-mkdir -p data/validation
-curl -sSL -o data/validation/xstest_prompts.csv \
-  https://raw.githubusercontent.com/paul-rottger/xstest/main/xstest_prompts.csv
-curl -sSL -o data/validation/truthfulqa.csv \
-  https://raw.githubusercontent.com/sylinrl/TruthfulQA/main/TruthfulQA.csv
-```
-
-Run the gates (resumable — re-running continues from a per-item checkpoint):
-
-```bash
-uv run python -m adfe_runner validate-judge --task safety --judge qwen3:8b       # XSTest (M)
-uv run python -m adfe_runner validate-judge --task factuality --judge qwen3:8b   # TruthfulQA (E)
-uv run python -m adfe_runner validate-judge --task safety --per-type 3           # fast sample
-```
-
-Read `runs/judge_validation_<task>_<judge>/validation.md`: kappa below ~0.4 means the judge
-cannot be trusted on that dimension; fix it (or scope claims away from it) before a study.
-
-Results for `qwen3:8b`: **safety** (n=450) kappa 0.78 / acc 89% / safe-overflag 2.4% —
-reliable on lawful and physical-harm requests (96–100%), with a known blind spot on
-discrimination/hateful-opinion solicitation (`contrast_discr`, 8%). **Factuality** is weaker
-(preliminary sample kappa ≈ 0.3): the judge endorses confident falsehoods, so treat E-dimension
-scores with caution. The current numbers always appear on the site once a validation completes.
-
-## Judge sensitivity
-
-Re-score an existing run with a different judge without overwriting the primary artifacts:
-
-```bash
-XAI_API_KEY=... uv run python -m adfe_runner judge-sensitivity \
-  --config configs/clean_local.yml --run-id adfe_clean_local_main \
-  --judge xai:grok-4.3 --score-json-retry 2 --workers 4
-```
-
-Current result: Grok judged all 2,100 clean-run outputs with no duplicate or malformed score
-rows, but agreed with the `qwen3:8b` slope direction on only **1/6** dimensions. Treat the
-agency-gradient headline as judge-sensitive until human-rated calibration resolves the gap. The
-most compelling current results are the artifact-integrity story, the Qwen/Grok judge disagreement,
-the refusal-mediated collapse of most Qwen slopes after excluding refusals, and the paired-refusal
-checks that catch one-sided refusal across lawful mirrored viewpoints.
-
-The old all-positive agency-gradient result is still visible for reproducibility, but it is
-**provisional**: it should not be cited as a stable empirical law without human calibration.
-After controlling for refusal and output length, Qwen's agency slopes are no longer significant;
-under Grok they are significantly negative across all six dimensions.
-
-## V2 redesign: refusal, non-refusal quality, role profiles
-
-The next citable design is v2. It keeps the current role cards frozen, but changes the outcomes:
-
-- **Refusal is its own outcome.** Refusal rate, warranted refusal, over-refusal, and paired
-  refusal-parity gaps are reported directly.
-- **Quality is analyzed only among non-refusals.** Refused outputs are excluded from quality
-  claims instead of becoming hidden zero-quality rows.
-- **Role-profile matching replaces the single monotone slope as the main role outcome.** v2
-  reports fit to the role-card profile, interval support, RMSE to expected midpoints, and
-  role-confusion diagnostics.
-- **Grok is primary, Qwen is sampled sensitivity.** `xai:grok-4.3` is the primary v2 judge for
-  the local citable arm. `qwen3:8b` is used on a deterministic stratified sensitivity sample,
-  balanced by model, role, agency mode, prompt pair, and Grok-primary refusal status, then
-  reported with post-stratified estimates. Grok frontier runs are explicitly exploratory because
-  Grok is also the judge provider.
-
-Run the local v2 arm:
+## Baseline Run
 
 ```bash
 XAI_API_KEY=... uv run python -m adfe_runner iterate-v2 \
-  --config configs/v2_clean_local_grok.yml --cycles 1 --batch-size all \
-  --run-id adfe_v2_clean_local_grok --workers 4
+  --config configs/v2_clean_local_grok.yml \
+  --cycles 1 \
+  --batch-size all \
+  --run-id adfe_v2_clean_local_grok \
+  --workers 4
 
 uv run python -m adfe_runner audit-v2 \
-  --config configs/v2_clean_local_grok.yml --run-id adfe_v2_clean_local_grok \
+  --config configs/v2_clean_local_grok.yml \
+  --run-id adfe_v2_clean_local_grok \
   --expect-full
+```
 
+The baseline artifacts live in `runs/adfe_v2_clean_local_grok/v2/`.
+
+## Remediation Run
+
+```bash
+XAI_API_KEY=... uv run python -m adfe_runner iterate-v2 \
+  --config configs/role_policy_remediation_grok.yml \
+  --cycles 1 \
+  --batch-size all \
+  --run-id adfe_role_policy_remediation_grok \
+  --workers 4
+
+uv run python -m adfe_runner audit-v2 \
+  --config configs/role_policy_remediation_grok.yml \
+  --run-id adfe_role_policy_remediation_grok \
+  --expect-full
+```
+
+The only intended experimental difference from baseline is
+[`data/remediation_role_policy_addendum.md`](data/remediation_role_policy_addendum.md).
+
+## Judge Sensitivity
+
+```bash
 uv run python -m adfe_runner judge-sensitivity-v2 \
-  --config configs/v2_clean_local_grok.yml --run-id adfe_v2_clean_local_grok \
-  --judge qwen3:8b --sample-strategy stratified --sample-size 300 \
-  --sample-seed 20260620 --artifact-name qwen3_8b_stratified_300 \
-  --workers 8 --score-json-retry 2
+  --config configs/v2_clean_local_grok.yml \
+  --run-id adfe_v2_clean_local_grok \
+  --judge qwen3:8b \
+  --sample-strategy stratified \
+  --sample-size 300 \
+  --sample-seed 20260620 \
+  --artifact-name qwen3_8b_stratified_300 \
+  --workers 8 \
+  --score-json-retry 2
+```
 
+The public baseline already has this artifact at
+`runs/adfe_v2_clean_local_grok/v2/comparison_qwen3_8b_stratified_300.json`.
+
+## Human Review
+
+Export the v2 packet:
+
+```bash
 uv run python -m adfe_runner export-ratings-v2 \
-  --config configs/v2_clean_local_grok.yml --run-id adfe_v2_clean_local_grok \
+  --config configs/v2_clean_local_grok.yml \
+  --run-id adfe_v2_clean_local_grok \
   --max-items 120
 ```
 
-Old derived v2 site/results snapshots are archived under `archives/` before regenerating the
-current public figures. The earlier partial `v2/qwen3_8b` scores are kept only for provenance;
-the public v2 sensitivity evidence uses the explicit `qwen3_8b_stratified_300` artifact.
-
-Run the exploratory frontier arm separately:
+Import completed two-rater labels:
 
 ```bash
-XAI_API_KEY=... uv run python -m adfe_runner iterate-v2 \
-  --config configs/v2_frontier_grok_exploratory.yml --cycles 1 --batch-size all \
-  --run-id adfe_v2_frontier_grok_exploratory --workers 4
+uv run python -m adfe_runner import-ratings-v2 \
+  --config configs/v2_clean_local_grok.yml \
+  --run-id adfe_v2_clean_local_grok \
+  --ratings path/to/completed_ratings.csv
 ```
 
-## Running a study
+The importer writes `runs/<run_id>/v2/human_ratings.jsonl` and
+`runs/<run_id>/v2/human_rating_summary.json`.
 
-`configs/clean_local.yml` is the canonical config: judge (`qwen3:8b`) held out of the audited
-set, all 30 prompts, both agency modes, frozen.
+## Paper Artifacts
+
+Regenerate source-backed paper tables:
 
 ```bash
-# smoke (a few items, end to end)
-uv run python -m adfe_runner iterate --config configs/clean_local.yml --cycles 1 --batch-size 6
-
-# full clean study (frozen, held-out judge, all prompts) — the citable run
-uv run python -m adfe_runner iterate --config configs/clean_local.yml \
-  --cycles 1 --batch-size all --run-id adfe_clean_local_main
+uv run python -m adfe_runner build-paper-artifacts \
+  --baseline-run-id adfe_v2_clean_local_grok \
+  --remediation-run-id adfe_role_policy_remediation_grok \
+  --frontier-run-id adfe_v2_frontier_grok_exploratory \
+  --out-dir paper/neurips_workshop/generated
 ```
 
-Runs are frozen by default (no prompt tuning). **Resumable:** re-run the same `--run-id` to
-continue after an interruption — already-generated/scored items are skipped. Artifacts land
-under `runs/<run_id>/` (`analysis.json`, `observations.md`, `scores.jsonl`).
-Before citing or publishing a run, require a clean artifact audit:
+The command never hand-edits paper numbers. It exports baseline tables immediately and writes
+remediation deltas once the remediation run has complete v2 scores.
+
+Compile the draft:
 
 ```bash
-uv run python -m adfe_runner audit-run --run-id <run_id> --expect-full
+python3 /Users/vik/.codex/plugins/cache/openai-bundled/latex/0.2.3/scripts/compile_latex.py \
+  /Users/vik/Developer/A_Theory_of_Agency/paper/neurips_workshop/paper.tex
 ```
 
-Population scope: small local models only. Audit frontier models later by prefixing a model
-spec with `anthropic:` (e.g. `--models anthropic:claude-opus-4-8`) once `ANTHROPIC_API_KEY`
-is set; the Anthropic backend is experimental and should be verified before a real audit.
+## Public Site
 
-Explicit vs. implicit vs. neutral agency contrast: `configs/agency_mode_contrast.yml`. Rescore
-existing generations after rubric changes: `rescore --run-id <run_id>`.
-
-## Unattended multi-day run
-
-For overnight / multi-day runs that survive sleep, terminal close, and kills, use the launchd
-service in [`scripts/`](scripts/): `caffeinate` prevents sleep, the agent relaunches if killed,
-and every step resumes from checkpoint. Install/monitor/stop instructions:
-[`scripts/README.md`](scripts/README.md).
-
-## Optional: human-rating calibration
-
-Judge validation against public datasets (above) is the primary calibration path. If you do
-have raters, you can additionally collect human ratings:
+The GitHub Pages site in [`docs/`](docs/) is generated from run artifacts:
 
 ```bash
-uv run python -m adfe_runner export-ratings --run-id <run_id> --strategy targeted-agency --max-items 120
-uv run python -m adfe_runner export-ratings --run-id <run_id> --strategy judge-disagreement --max-items 120
-uv run python -m adfe_runner import-ratings --run-id <run_id> --ratings path/to/ratings.csv
-uv run python -m adfe_runner analyze --run-id <run_id> --with-human-calibration
+uv run python -m adfe_runner build-site \
+  --config configs/v2_clean_local_grok.yml \
+  --run-id adfe_v2_clean_local_grok
 ```
 
-`judge-disagreement` is the recommended next packet: it targets Qwen/Grok disagreements,
-refusal-mediated cases, ceiling-with-issues rows, and low-disagreement controls.
+See [`docs/UPDATING.md`](docs/UPDATING.md).
 
-> Legacy configs (`publication_pilot.yml`, `agency_effect_explicit.yml`,
-> `refusal_asymmetry_replication.yml`, `public_essay_replication.yml`) predate the methodology
-> fix and audit `qwen3:8b` with itself as judge; they are kept only to reproduce the earlier
-> (contaminated) runs. Use `clean_local.yml` for any citable result.
+## Active Files
+
+- `configs/v2_clean_local_grok.yml`: baseline role-counterfactual evaluation.
+- `configs/role_policy_remediation_grok.yml`: matched remediation evaluation.
+- `configs/v2_frontier_grok_exploratory.yml`: exploratory frontier arm, not pooled with the
+  local baseline.
+- `data/prompts.jsonl`: civic prompts and mirrored viewpoint pairs.
+- `data/role_cards.yml`: assigned civic role definitions and expected role profiles.
+- `data/source_packets/`: dated static source packets.
+- `adfe_runner/v2_analysis.py`: refusal, non-refusal quality, role-profile, and judge-sensitivity
+  analysis.
+- `adfe_runner/paper.py`: generated tables and matched remediation deltas for the workshop paper.
+
+## Limits
+
+The current evidence is about small local models, U.S. civic topics, a static prompt set, and an
+LLM-judge workflow. The exploratory frontier arm is useful for stress testing but not independent
+evidence because it includes same-provider judging. Human review is a calibration packet, not a
+replacement for the full evaluation.

@@ -1,0 +1,219 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{url}
+\usepackage{hyperref}
+
+\input{generated/numbers.tex}
+
+\title{Role Prompts Are Policy Controls:\\Role-Conditioned Fairness Evaluation for Civic AI Systems}
+\author{Anonymous Authors}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Civic AI systems are often deployed with role prompts: assistant, advocate, mediator, news provider,
+government information service, campaign aide, or researcher. These prompts are usually treated as
+stylistic configuration. We argue that they are policy controls. A role prompt can change what help is
+allowed, when a system refuses, which sources it treats as salient, and how it handles mirrored lawful
+viewpoints. We introduce a role-counterfactual evaluation for civic AI systems: hold the prompt,
+topic, source packet, model, and judge fixed, vary only the assigned role, and measure refusal,
+viewpoint symmetry, role-profile fit, non-refusal quality, judge robustness, and human calibration.
+On a local baseline of \BaselineRows{} judged outputs, the primary judge finds a \BaselineRefusalRate{}
+refusal rate, \BaselineOverRefusalRate{} over-refusal rate, and \BaselineOneSidedPairs{} one-sided
+refusal cases among \BaselinePairCount{} mirrored-pair comparisons. These failures are actionable:
+they motivate executable role policies and paired-viewpoint regression gates rather than a single
+flat question such as ``is the model politically biased?'' We provide a matched remediation design
+that adds explicit role-policy instructions while keeping all evaluation axes fixed, plus a 120-item
+two-rater human calibration packet.
+\end{abstract}
+
+\section{Introduction}
+
+Civic AI systems do not only answer questions. They answer questions while acting in a role. A
+general assistant, campaign aide, government information service, mediator, researcher, advocate,
+and news provider can all receive the same lawful political prompt and the same source packet, yet
+each role carries different obligations. Some roles should persuade; some should not. Some should
+summarize official procedure; others should map arguments or mediate disagreement. The role prompt
+therefore functions as deployment policy.
+
+This matters for fairness evaluation. Asking whether a model is ``biased'' is too flat for civic
+systems, because a deployed product may fail by refusing one lawful viewpoint and answering the
+mirror, by giving a campaign-style response while assigned a government-information role, or by
+changing evidentiary burden across political sides. These are not merely tone differences. They
+affect who receives useful civic help and under what institutional identity.
+
+We propose role-conditioned fairness evaluation: vary assigned role as an experimental variable and
+measure whether civic behavior changes under otherwise matched conditions. The design is inspired
+by holistic, multi-metric evaluation \cite{liang2022helm}, bias and opinion benchmarks
+\cite{parrish2022bbq,santurkar2023opinionqa}, work on political preferences in language models
+\cite{rozado2024preferences,rozado2025measuring}, persona-prompting studies
+\cite{zheng2023personas,lutz2025prompt,xiao2026persona}, refusal evaluation
+\cite{rottger2024xstest}, and LLM-as-judge methodology \cite{zheng2023mtbench,li2024judge}.
+
+The contribution is practical rather than grandiose:
+\begin{enumerate}
+  \item a role-counterfactual civic evaluation design with mirrored lawful viewpoints;
+  \item a metric split between refusal, non-refusal quality, role-profile fit, and judge robustness;
+  \item a matched remediation experiment that tests executable role policies as an intervention;
+  \item a small human-calibration protocol targeted at refusal asymmetry, role-fit misses, and judge disagreements.
+\end{enumerate}
+
+\section{Evaluation Design}
+
+\paragraph{Unit of evaluation.}
+A row is one model output for one prompt, one assigned role, one role-presentation mode, and one
+generator model. The baseline local arm uses five local generator models, seven civic roles, thirty
+prompts, and two role-presentation modes, producing \BaselineRows{} primary judged outputs. The
+prompts cover abortion policy, climate policy, immigration, policing, taxation, and voting. Source
+packets are static and dated so the model is not rewarded for inventing current claims.
+
+\paragraph{Role counterfactuals.}
+For a fixed model and prompt, the role is varied across assistant, advocate, researcher, news
+provider, mediator, government information, and campaign aide. Each role card defines expected
+emphasis across six dimensions: user-agency fidelity, epistemic integrity, viewpoint symmetry,
+curation accountability, deliberative standing, and non-manipulation/refusal integrity.
+
+\paragraph{Mirrored lawful viewpoints.}
+Argument prompts are paired so that the only intended difference is viewpoint. For example, a pair
+may ask for a lawful argument on one side of a policy debate and then for the mirrored lawful
+argument on the other side. One-sided refusal within such a pair is a direct product failure: the
+system gave help to one lawful viewpoint and withheld help from the counterpart under the same
+model, role, and role-presentation mode.
+
+\section{Metrics}
+
+The evaluation intentionally separates outcomes that are often collapsed:
+
+\paragraph{Refusal.}
+We measure refusal rate, warranted refusal among refusals, over-refusal, topic-level refusal, and
+one-sided refusal across mirrored viewpoint pairs. Refusal is not encoded as zero quality; it is a
+separate outcome.
+
+\paragraph{Quality among non-refusals.}
+Only non-refused outputs enter quality means. This avoids treating a refusal as a low-quality answer
+while still allowing refusal to be audited directly.
+
+\paragraph{Role-profile fit.}
+For each role, role-card expectations specify intervals over the six dimensions. We report observed
+non-refusal quality, distance from expected midpoints, interval support, and role-profile mismatch
+examples.
+
+\paragraph{Judge robustness.}
+The primary local baseline is judged by `xai:grok-4.3'. A stratified sample of \JudgeSensitivityRows{}
+rows is also judged by `qwen3:8b'. The raw refusal agreement on that sample is
+\JudgeRefusalAgreement{}, with a post-stratified refusal mismatch rate of \JudgePostMismatch{}.
+This is a robustness check, not a claim that either judge is ground truth.
+
+\paragraph{Human calibration.}
+The human packet has 120 items: 40 refusal-asymmetry examples, 40 role-profile misses, 20
+judge-disagreement examples, and 20 low-disagreement controls. Two raters label whether refusal was
+warranted, whether role fit passes, whether viewpoint symmetry passes, and the primary failure
+reason. These labels calibrate the LLM-judge metrics; they do not replace the full-run estimates.
+
+\section{Baseline Results}
+
+The baseline contains \BaselineRows{} primary judged rows, of which \BaselineNonrefusalRows{} are
+non-refusals. The primary judge marks \BaselineRefusalRate{} of rows as refusals and
+\BaselineOverRefusalRate{} as over-refusals. Across mirrored viewpoint comparisons, the baseline
+contains \BaselineOneSidedPairs{} one-sided refusal cases out of \BaselinePairCount{} comparisons
+(\BaselineOneSidedRate{}).
+
+\begin{table}[t]
+\centering
+\caption{Baseline headline metrics generated from run artifacts.}
+\begin{tabular}{lr}
+\toprule
+Metric & Value \\
+\midrule
+Primary judged outputs & \BaselineRows{} \\
+Non-refusal outputs used for quality & \BaselineNonrefusalRows{} \\
+Refusal rate & \BaselineRefusalRate{} \\
+Over-refusal rate & \BaselineOverRefusalRate{} \\
+One-sided mirrored-pair refusals & \BaselineOneSidedPairs{} / \BaselinePairCount{} \\
+Alternate-judge sample rows & \JudgeSensitivityRows{} \\
+Alternate-judge refusal agreement & \JudgeRefusalAgreement{} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The key interpretation is not that the evaluated models have one stable ideological direction.
+Instead, the results identify concrete role-conditioned failures. First, lawful mirrored viewpoints
+can receive asymmetric refusal treatment. Second, outputs can be fluent but poor fits for the
+assigned civic role. Third, judge sensitivity is large enough that high-impact claims require a
+second judge and human calibration.
+
+\section{Remediation Experiment}
+
+The remediation arm tests whether explicit role policy reduces the failures found in the baseline.
+It keeps models, prompts, source packets, roles, agency modes, generation settings, and primary judge
+fixed. The only intended intervention is an executable role-policy addendum specifying allowed help,
+forbidden persuasion, refusal criteria, source requirements, uncertainty language, escalation
+triggers, and viewpoint parity.
+
+The remediation run is \path{adfe_role_policy_remediation_grok}. The planned comparison uses
+matched model-role-mode-prompt keys and reports paired deltas with confidence intervals for refusal
+rate, over-refusal rate, role-profile fit, and non-refusal quality. At this draft stage, the
+remediation run is configured but not yet complete (`RemediationAvailable' =
+\RemediationAvailable{}). The final submission should replace this paragraph with generated
+matched-delta tables from \path{generated/tables/remediation_matched_deltas.csv}.
+
+\section{Related Work}
+
+HELM argues for broad, multi-metric language-model evaluation rather than single-score reporting
+\cite{liang2022helm}. BBQ and OpinionQA show complementary ways to operationalize social bias and
+opinion alignment \cite{parrish2022bbq,santurkar2023opinionqa}. Political-preference evaluations
+probe ideological behavior, but often with a single model persona or testing frame
+\cite{rozado2024preferences,rozado2025measuring}. Our design instead asks how the same civic prompt
+changes under different assigned deployment roles.
+
+Persona-prompting work shows that roles can reshape outputs in conditional and sometimes
+unreliable ways \cite{zheng2023personas,lutz2025prompt,xiao2026persona}. We build on this by
+treating role prompts as policy configuration that must be evaluated directly in civic deployments.
+XSTest motivates over-refusal measurement \cite{rottger2024xstest}, while TruthfulQA motivates
+separate factuality checks for judge calibration \cite{lin2022truthfulqa}. MT-Bench and later
+LLM-as-judge surveys motivate scalable judging while emphasizing bias and meta-evaluation limits
+\cite{zheng2023mtbench,li2024judge}.
+
+\section{Limitations}
+
+The completed baseline is limited to small local models and U.S. civic topics. The exploratory
+frontier arm has \FrontierRows{} rows and a \FrontierRefusalRate{} refusal rate, but it is not pooled
+with the local evidence because the judge provider also appears in the generator population. The
+prompt set is static and small relative to the space of civic tasks. LLM judges are useful for scale
+but can encode their own refusal and viewpoint biases. The human packet is intentionally small and
+calibrates targeted claims; it is not a population-level replacement for the full evaluation.
+
+\section{Conclusion}
+
+Role prompts are a control surface for civic AI policy. Treating them as mere style text hides
+failures that matter in deployment: one-sided lawful refusal, role-inappropriate help, unstable
+judge conclusions, and weak escalation rules. A role-counterfactual evaluation makes those failures
+measurable and gives system builders a concrete remediation loop: version role policies, test
+mirrored viewpoints, compare judges, send hard cases to human review, and block releases when role
+changes alter civic obligations.
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\appendix
+
+\section{Artifact Notes}
+
+All reported headline numbers in this draft are read from `generated/numbers.tex', which is produced
+by `adfe\_runner build-paper-artifacts'. Tables under `generated/tables/' are regenerated from run
+artifacts and should be used as the source of truth during revision.
+
+\section{Example Prompt Families}
+
+The prompt set includes civic briefings, government-information requests, mediation tasks, and
+mirrored argument requests. Example task shapes include: explain what people should know today about
+a policy area; summarize procedural public information with source limits; map tradeoffs between
+two sides; and draft a lawful argument for one side of a policy debate with a mirrored counterpart
+for the other side.
+
+\end{document}

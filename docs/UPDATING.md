@@ -1,64 +1,81 @@
-# Updating the public site after a run
+# Updating the Public Site
 
-The site is two pieces:
+The GitHub Pages site has two pieces:
 
-- **`docs/index.html`** — the hand-designed page (problem, approach, data, judge, sensitivity, findings).
-  Edit this only to change wording or design.
-- **`docs/data/summary.js`** — the data, **generated** from run artifacts. Never hand-edit it.
+- `docs/index.html`: hand-edited page structure and wording.
+- `docs/data/summary.js`: generated data from run artifacts. Do not hand-edit it.
 
-GitHub Pages serves `docs/` on every push to `main`, so updating the site = regenerating the
-data file and pushing.
+GitHub Pages serves `docs/` after pushes to `main`.
 
-## After every major run
+## Baseline Site Refresh
 
-1. Make sure the run finished analysis (`iterate` writes `analysis.json`; if you only have
-   generations/scores, run `analyze --run-id <id>` first).
+```bash
+uv run python -m adfe_runner audit-v2 \
+  --config configs/v2_clean_local_grok.yml \
+  --run-id adfe_v2_clean_local_grok \
+  --expect-full
 
-2. (Recommended) refresh the judge-validation gate so the page's κ is current:
-   ```bash
-   uv run python -m adfe_runner validate-judge --judge qwen3:8b
-   ```
+uv run python -m adfe_runner build-site \
+  --config configs/v2_clean_local_grok.yml \
+  --run-id adfe_v2_clean_local_grok
+```
 
-3. Audit the run artifacts. This fails on duplicate rows, unresolved generation failures,
-   missing scores, or incomplete full-factorial runs:
-   ```bash
-   uv run python -m adfe_runner audit-run --run-id <run_id> --expect-full
-   ```
+Preview locally:
 
-4. If an alternate judge is available, refresh the judge-sensitivity artifact. The site will
-   pick up the latest `runs/<run_id>/judge_sensitivity/*/comparison.json`:
-   ```bash
-   XAI_API_KEY=... uv run python -m adfe_runner judge-sensitivity \
-     --config configs/clean_local.yml --run-id <run_id> \
-     --judge xai:grok-4.3 --score-json-retry 2 --workers 4
-   ```
+```bash
+python3 -m http.server 8099 --directory docs
+```
 
-5. Regenerate the page data. Pin the run with `--run-id`:
-   ```bash
-   uv run python -m adfe_runner build-site --run-id <run_id>
-   ```
-   The command prints the run id, its `contaminated` flag, and the judge κ it baked in.
+Open `http://localhost:8099`.
 
-6. Preview locally before pushing:
-   ```bash
-   python3 -m http.server 8099 --directory docs   # then open http://localhost:8099
-   ```
+## Judge Sensitivity Refresh
 
-7. Commit and push — Pages redeploys automatically (usually live within a minute):
-   ```bash
-   git add docs && git commit -m "site: update from <run_id>" && git push
-   ```
+The site uses the latest v2 comparison artifact under `runs/<run_id>/v2/comparison_*.json`.
+Regenerate the canonical stratified sample with:
 
-## Citable vs. preliminary
+```bash
+uv run python -m adfe_runner judge-sensitivity-v2 \
+  --config configs/v2_clean_local_grok.yml \
+  --run-id adfe_v2_clean_local_grok \
+  --judge qwen3:8b \
+  --sample-strategy stratified \
+  --sample-size 300 \
+  --sample-seed 20260620 \
+  --artifact-name qwen3_8b_stratified_300 \
+  --workers 8 \
+  --score-json-retry 2
+```
 
-`build-site` reads `run_meta.contaminated`. A run produced with `--calibrate` (or any pre-fix
-run) is flagged contaminated and the page shows a **Preliminary** banner. For a headline you
-intend to stand behind, point `--run-id` at a **frozen** run from `configs/clean_local.yml`
-(no `--calibrate`), so the banner disappears and the numbers are citable.
+Then rerun `build-site`.
 
-## What the page shows
+## Remediation Results
 
-The judge-validation block (κ, accuracy, blind spots) is independent of the audited run and is
-always the clean gate result. The judge-sensitivity block comes from the latest alternate-judge
-comparison for the chosen run. The findings block (agency gradient, interval tests, refusal
-asymmetry) comes from the chosen run.
+The public site currently reports the baseline evaluation. After the matched remediation run is
+complete, first regenerate paper tables:
+
+```bash
+uv run python -m adfe_runner build-paper-artifacts \
+  --baseline-run-id adfe_v2_clean_local_grok \
+  --remediation-run-id adfe_role_policy_remediation_grok \
+  --frontier-run-id adfe_v2_frontier_grok_exploratory
+```
+
+Only add remediation results to `docs/index.html` after the remediation run passes:
+
+```bash
+uv run python -m adfe_runner audit-v2 \
+  --config configs/role_policy_remediation_grok.yml \
+  --run-id adfe_role_policy_remediation_grok \
+  --expect-full
+```
+
+## Publish
+
+```bash
+git add docs paper/neurips_workshop/generated
+git commit -m "site: update role-conditioned fairness results"
+git push
+```
+
+Before publishing, check that visible text does not refer to internal draft labels as if a reader
+already knows the project history.

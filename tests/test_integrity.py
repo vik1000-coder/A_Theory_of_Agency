@@ -59,7 +59,7 @@ def make_score(item_id: str, run_id: str = "run") -> ScoreRecord:
 
 
 def test_failed_generation_is_error_artifact_and_retryable(tmp_path):
-    config = load_config(ROOT / "configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
     prompts = load_prompts(ROOT / config.prompts_path)
     roles = load_role_cards(ROOT / config.role_cards_path)
     packets = load_source_packets(ROOT / config.source_packets_dir)
@@ -103,8 +103,37 @@ def test_failed_generation_is_error_artifact_and_retryable(tmp_path):
     assert len(read_jsonl(run_path / "generations.jsonl", GenerationRecord)) == 1
 
 
+def test_generation_policy_addendum_is_injected(tmp_path):
+    addendum = tmp_path / "policy.md"
+    addendum.write_text("POLICY TOKEN: mirror lawful viewpoints.", encoding="utf-8")
+    config = load_config(ROOT / "configs/v2_clean_local_grok.yml").model_copy(
+        update={"generation_policy_addendum_path": str(addendum), "runs_dir": str(tmp_path)}
+    )
+    prompts = load_prompts(ROOT / config.prompts_path)
+    roles = load_role_cards(ROOT / config.role_cards_path)
+    packets = load_source_packets(ROOT / config.source_packets_dir)
+    selected = [(prompts[0], "assistant", "m1", "explicit")]
+    run_path = tmp_path / "run"
+
+    records = generate_records(
+        config,
+        prompts,
+        roles,
+        packets,
+        selected,
+        "run",
+        0,
+        CalibrationState(),
+        SuccessClient(),
+        out_path=run_path / "generations.jsonl",
+    )
+
+    assert len(records) == 1
+    assert "POLICY TOKEN" in records[0].generation_prompt
+
+
 def test_audit_run_flags_duplicate_scores(tmp_path):
-    config = load_config(ROOT / "configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
     init_run(config, "config.yml", ["m1"], frozen_config=False, run_id="run")
     run_path = tmp_path / "run"
     append_jsonl(run_path / "generations.jsonl", [make_generation("item1")])
@@ -117,7 +146,7 @@ def test_audit_run_flags_duplicate_scores(tmp_path):
 
 
 def test_repair_run_backs_up_drops_errors_and_dedupes(tmp_path):
-    config = load_config(ROOT / "configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
     init_run(config, "config.yml", ["m1"], frozen_config=False, run_id="run")
     run_path = tmp_path / "run"
     append_jsonl(
@@ -138,7 +167,7 @@ def test_repair_run_backs_up_drops_errors_and_dedupes(tmp_path):
 
 
 def test_frozen_config_is_loaded_on_resume_and_model_change_rejected(tmp_path):
-    config = load_config(ROOT / "configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path), "default_models": ["m1"]})
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path), "default_models": ["m1"]})
     config_path = tmp_path / "config.yml"
     config_path.write_text(yaml.safe_dump(config.model_dump(mode="json")), encoding="utf-8")
     _run_id, run_path = init_run(config, str(config_path), ["m1"], frozen_config=True, run_id="run")

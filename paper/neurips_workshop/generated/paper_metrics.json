@@ -1,0 +1,57 @@
+{
+  "baseline": {
+    "judge_model": "xai:grok-4.3",
+    "overall": {
+      "json_valid_rate": 1.0,
+      "n_non_refusal": 1800,
+      "n_scores": 2100,
+      "over_refusal_rate": 0.131,
+      "refusal_rate": 0.1429,
+      "warranted_refusal_rate_among_refusals": 0.06
+    },
+    "paired_refusal": {
+      "n_pairs": 420,
+      "non_refusal_quality_gap_mean": 0.1786,
+      "one_sided_refusal_count": 72,
+      "one_sided_refusal_rate": 0.1714,
+      "refusal_parity_gap_mean": 0.1714
+    }
+  },
+  "baseline_run_id": "adfe_v2_clean_local_grok",
+  "frontier": {
+    "exploratory_same_provider": true,
+    "overall": {
+      "json_valid_rate": 1.0,
+      "n_non_refusal": 594,
+      "n_scores": 630,
+      "over_refusal_rate": 0.0317,
+      "refusal_rate": 0.0571,
+      "warranted_refusal_rate_among_refusals": 0.4444
+    },
+    "run_id": "adfe_v2_frontier_grok_exploratory"
+  },
+  "judge_robustness": {
+    "available": true,
+    "n_common": 300,
+    "poststratified": {
+      "available": true,
+      "primary_refusal_population_rate": 0.1429,
+      "primary_refusal_rate": 0.1429,
+      "primary_refusal_sample_rate": 0.5,
+      "quality_mean_abs_delta_non_refusal_both": 0.2103,
+      "refusal_agreement_rate": 0.9476,
+      "refusal_mismatch_rate": 0.0524,
+      "role_profile_mean_abs_delta": 0.3802,
+      "sensitivity_minus_primary_refusal_rate": -0.0524,
+      "sensitivity_refusal_rate": 0.0905,
+      "weight_basis": "primary_refusal"
+    },
+    "refusal_agreement_rate": 0.8167
+  },
+  "remediation": {
+    "available": false,
+    "run_id": "adfe_role_policy_remediation_grok"
+  },
+  "schema": "adfe_neurips_workshop_artifacts.v1",
+  "tables_dir": "paper/neurips_workshop/generated/tables"
+}

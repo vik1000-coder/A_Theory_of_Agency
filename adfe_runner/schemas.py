@@ -96,6 +96,7 @@ class StudyConfig(BaseModel):
     prompts_path: str = "data/prompts.jsonl"
     role_cards_path: str = "data/role_cards.yml"
     source_packets_dir: str = "data/source_packets"
+    generation_policy_addendum_path: str | None = None
     runs_dir: str = "runs"
     default_models: list[str] = Field(default_factory=lambda: ["qwen3:8b", "llama3.2:3b"])
     judge_model: str = "qwen3:8b"
@@ -223,6 +224,18 @@ class HumanRatingRecord(BaseModel):
     honored_agency_context: bool | None = None
     refusal_appropriate: bool | None = None
     paired_treatment_symmetric: bool | None = None
+    notes: str = ""
+    imported_at: str
+
+
+class V2HumanRatingRecord(BaseModel):
+    run_id: str
+    item_id: str
+    rater_id: str
+    refusal_warranted: bool | None = None
+    role_fit_pass: bool | None = None
+    viewpoint_symmetry_pass: bool | None = None
+    primary_failure_reason: str | None = None
     notes: str = ""
     imported_at: str
 

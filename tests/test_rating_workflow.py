@@ -4,16 +4,16 @@ from types import SimpleNamespace
 import yaml
 
 from adfe_runner.analysis import analyze_scores
-from adfe_runner.cli import command_import_ratings, export_rating_packet
-from adfe_runner.io import append_jsonl, load_config, load_prompts, load_role_cards, read_jsonl
-from adfe_runner.schemas import GenerationRecord, HumanRatingRecord, ScoreRecord, now_iso
+from adfe_runner.cli import command_import_ratings, command_import_ratings_v2, export_rating_packet
+from adfe_runner.io import append_jsonl, load_config, load_prompts, load_role_cards, read_json, read_jsonl
+from adfe_runner.schemas import GenerationRecord, HumanRatingRecord, ScoreRecord, V2HumanRatingRecord, now_iso
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_export_rating_packet(tmp_path):
-    config = load_config(ROOT / "configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
     run_path = tmp_path / "run1"
     record = GenerationRecord(
         run_id="run1",
@@ -40,7 +40,7 @@ def test_export_rating_packet(tmp_path):
 
 
 def test_export_targeted_rating_packet_includes_refusal_counterpart(tmp_path):
-    config = load_config(ROOT / "configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
     run_path = tmp_path / "run2"
     records = [
         GenerationRecord(
@@ -113,7 +113,7 @@ def test_export_targeted_rating_packet_includes_refusal_counterpart(tmp_path):
 
 
 def test_export_judge_disagreement_packet_includes_judge_context(tmp_path):
-    config = load_config(ROOT / "configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
     run_path = tmp_path / "run-disagreement"
     records = [
         GenerationRecord(
@@ -203,7 +203,7 @@ def test_export_judge_disagreement_packet_includes_judge_context(tmp_path):
 
 
 def test_import_rating_packet_with_publication_calibration_fields(tmp_path):
-    config = load_config(ROOT / "configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml").model_copy(update={"runs_dir": str(tmp_path)})
     config_path = tmp_path / "config.yml"
     config_path.write_text(yaml.safe_dump(config.model_dump(mode="json")), encoding="utf-8")
     run_path = tmp_path / "run3"
@@ -280,3 +280,47 @@ def test_import_rating_packet_with_publication_calibration_fields(tmp_path):
     analysis = analyze_scores([score], prompts, roles.by_id, ratings)
     assert analysis["human_calibration"]["refusal_appropriate_rate"] == 1.0
     assert analysis["human_calibration"]["paired_treatment_symmetric_rate"] == 0.0
+
+
+def test_import_v2_human_ratings_writes_agreement_summary(tmp_path):
+    config = load_config(ROOT / "configs/v2_clean_local_grok.yml").model_copy(update={"runs_dir": str(tmp_path)})
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(yaml.safe_dump(config.model_dump(mode="json")), encoding="utf-8")
+    run_path = tmp_path / "run-v2"
+    record = GenerationRecord(
+        run_id="run-v2",
+        cycle=0,
+        item_id="item1",
+        model="m1",
+        role="assistant",
+        prompt_id="immigration_briefing",
+        source_packet_id="immigration_2026_static",
+        generation_prompt="prompt",
+        output="output",
+        created_at=now_iso(),
+    )
+    append_jsonl(run_path / "generations.jsonl", [record])
+    ratings_csv = tmp_path / "v2_ratings.csv"
+    ratings_csv.write_text(
+        "\n".join(
+            [
+                "item_id,rater_id,human_refusal_warranted,human_role_fit_pass,human_viewpoint_symmetry_pass,human_primary_failure_reason,notes",
+                "item1,rater_a,false,true,true,none,ok",
+                "item1,rater_b,false,true,false,viewpoint_asymmetry,disagrees on symmetry",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = command_import_ratings_v2(
+        SimpleNamespace(config=str(config_path), run_id="run-v2", ratings=str(ratings_csv))
+    )
+
+    assert result == 0
+    ratings = read_jsonl(run_path / "v2" / "human_ratings.jsonl", V2HumanRatingRecord)
+    assert len(ratings) == 2
+    summary = read_json(run_path / "v2" / "human_rating_summary.json")
+    assert summary["n_items"] == 1
+    assert summary["rater_agreement"]["refusal_warranted"]["agreement_rate"] == 1.0
+    assert summary["rater_agreement"]["viewpoint_symmetry_pass"]["agreement_rate"] == 0.0

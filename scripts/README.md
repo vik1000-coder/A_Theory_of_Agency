@@ -1,67 +1,35 @@
-# Unattended multi-day run (launchd)
+# Scripts
 
-Runs the full pipeline — judge factuality validation, then the clean study, then
-`build-site` — as a per-user background service that survives closing the terminal/editor
-and is resumable, so an OS kill or reboot just continues where it left off.
+The active script is `run_v2_pipeline.sh`, which runs the workshop evaluation path:
 
-- `run_pipeline.sh` — the resumable pipeline (cd → validate → study → audit-run →
-  build-site). Exits 0 only when validation, study, artifact audit, and site build finish,
-  which tells launchd to stop relaunching.
-- `com.adfe.pipeline.plist` — the launchd agent. `caffeinate -is` keeps the Mac awake on AC;
-  `KeepAlive {SuccessfulExit:false}` relaunches it if it's killed mid-run; `Nice 10` keeps it
-  out of the way of interactive use.
+1. Baseline role-counterfactual evaluation.
+2. Baseline v2 audit.
+3. Stratified alternate-judge sensitivity.
+4. 120-item human-review packet export.
+5. Matched role-policy remediation evaluation.
+6. Remediation v2 audit.
+7. Exploratory frontier arm.
+8. Paper table generation.
+9. Public site data regeneration.
 
-## Install / start
-
-```bash
-cp scripts/com.adfe.pipeline.plist ~/Library/LaunchAgents/
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.adfe.pipeline.plist
-```
-
-It starts immediately and on every login. Keep the Mac **plugged in** and **logged in**
-(a per-user agent stops at logout; `caffeinate` only blocks sleep on AC power).
-
-## Monitor
+Run it with:
 
 ```bash
-launchctl print gui/$(id -u)/com.adfe.pipeline | grep -iE 'state|pid'
-tail -f runs/clean_study.log              # study progress
-tail -n 3 runs/factuality_validation.log  # validation progress
+XAI_API_KEY=... scripts/run_v2_pipeline.sh
 ```
 
-Progress is also visible on disk: `runs/judge_validation_factuality_qwen3_8b/results.jsonl`
-(validation checkpoint) and `runs/adfe_clean_local_main/generations.jsonl` (study).
-
-## Stop / uninstall
+or place the key in `~/.config/adfe/xai.env`:
 
 ```bash
-launchctl bootout gui/$(id -u)/com.adfe.pipeline
-rm ~/Library/LaunchAgents/com.adfe.pipeline.plist
+export XAI_API_KEY=...
 ```
 
-## Frontier (Grok) + V-gate agent
+Optional environment variables:
 
-`run_frontier.sh` + `com.adfe.frontier.plist` run the V judge gate (BABE) then the frontier
-Grok study, resumably. It sources the xAI key from `~/.config/adfe/xai.env` (never committed).
+- `BASELINE_RUN_ID`, default `adfe_v2_clean_local_grok`
+- `REMEDIATION_RUN_ID`, default `adfe_role_policy_remediation_grok`
+- `FRONTIER_RUN_ID`, default `adfe_v2_frontier_grok_exploratory`
+- `WORKERS`, default `4`
 
-```bash
-cp scripts/com.adfe.frontier.plist ~/Library/LaunchAgents/
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.adfe.frontier.plist
-# monitor
-tail -f runs/launchd.frontier.out.log
-launchctl print gui/$(id -u)/com.adfe.frontier | grep -iE 'state|pid'
-# stop / uninstall
-launchctl bootout gui/$(id -u)/com.adfe.frontier
-rm ~/Library/LaunchAgents/com.adfe.frontier.plist
-```
-
-It writes `runs/FRONTIER_DONE` when both the V gate and the frontier study complete.
-
-## When it finishes
-
-It writes `runs/PIPELINE_DONE` and regenerates `docs/data/summary.js`. Publish the updated
-site with:
-
-```bash
-git add docs && git commit -m "site: clean study results" && git push
-```
+The old launchd scripts for the pre-workshop narrative are archived under
+`archives/workshop_legacy_20260622/scripts/`.

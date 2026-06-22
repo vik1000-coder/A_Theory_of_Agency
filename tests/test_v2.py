@@ -32,7 +32,7 @@ class MalformedClient:
 
 
 def load_fixture_context(role_id="researcher"):
-    config = load_config(ROOT / "configs/publication_pilot.yml")
+    config = load_config(ROOT / "archives/workshop_legacy_20260622/configs/publication_pilot.yml")
     prompts = load_prompts(ROOT / config.prompts_path)
     roles = load_role_cards(ROOT / config.role_cards_path)
     packets = load_source_packets(ROOT / config.source_packets_dir)
