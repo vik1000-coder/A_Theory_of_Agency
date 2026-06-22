@@ -30,6 +30,12 @@
     },
     "run_id": "adfe_v2_frontier_grok_exploratory"
   },
+  "human_calibration": {
+    "available": false,
+    "n_items": null,
+    "n_raters": null,
+    "n_ratings": null
+  },
   "judge_robustness": {
     "available": true,
     "n_common": 300,
@@ -48,10 +54,30 @@
     },
     "refusal_agreement_rate": 0.8167
   },
+  "policy_ablations": {
+    "available": false,
+    "available_run_ids": [],
+    "n_available": 0,
+    "requested_run_ids": [
+      "no_viewpoint_parity",
+      "no_refusal_criteria",
+      "no_source_uncertainty",
+      "no_role_specific_rules"
+    ]
+  },
+  "regression_gate": {
+    "available": false,
+    "path": "paper/neurips_workshop/generated/regression_gate_summary.json"
+  },
   "remediation": {
     "available": false,
     "run_id": "adfe_role_policy_remediation_grok"
   },
   "schema": "adfe_neurips_workshop_artifacts.v1",
+  "stress": {
+    "available": false,
+    "baseline_run_id": "adfe_stress_baseline_grok",
+    "remediation_run_id": "adfe_stress_role_policy_grok"
+  },
   "tables_dir": "paper/neurips_workshop/generated/tables"
 }

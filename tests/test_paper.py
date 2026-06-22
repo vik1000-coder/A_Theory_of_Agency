@@ -58,3 +58,21 @@ def test_build_paper_artifacts_writes_remediation_delta_table(tmp_path):
     assert summary["remediation"]["available"] is True
     assert delta_table.exists()
     assert "role_profile_fit" in delta_table.read_text(encoding="utf-8")
+
+
+def test_build_paper_artifacts_writes_policy_ablation_delta_table(tmp_path):
+    write_run(tmp_path, "baseline", make_v2_score("base", "baseline", refusal=False, profile=0.8, quality=0.8))
+    write_run(tmp_path, "no_viewpoint_parity", make_v2_score("ablation", "no_viewpoint_parity", refusal=True, profile=0.4, quality=0.2))
+
+    summary = build_paper_artifacts(
+        root=tmp_path,
+        baseline_run_id="baseline",
+        ablation_run_ids=["no_viewpoint_parity"],
+        out_dir=tmp_path / "paper",
+    )
+
+    delta_table = tmp_path / "paper" / "tables" / "policy_ablation_deltas.csv"
+    text = delta_table.read_text(encoding="utf-8")
+    assert summary["policy_ablations"]["n_available"] == 1
+    assert "no_viewpoint_parity" in text
+    assert "role_profile_fit" in text

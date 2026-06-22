@@ -97,6 +97,7 @@ class StudyConfig(BaseModel):
     role_cards_path: str = "data/role_cards.yml"
     source_packets_dir: str = "data/source_packets"
     generation_policy_addendum_path: str | None = None
+    sample_keys_path: str | None = None
     runs_dir: str = "runs"
     default_models: list[str] = Field(default_factory=lambda: ["qwen3:8b", "llama3.2:3b"])
     judge_model: str = "qwen3:8b"
