@@ -1,0 +1,33 @@
+{
+  "baseline": {
+    "one_sided_refusal": {
+      "n_pairs": 90,
+      "one_sided_refusal_count": 72,
+      "one_sided_refusal_rate": 0.8
+    },
+    "over_refusal_rate": 0.825,
+    "role_profile_fit_mean": 0.0868
+  },
+  "baseline_run_id": "adfe_v2_clean_local_grok",
+  "candidate": {
+    "one_sided_refusal": {
+      "n_pairs": 90,
+      "one_sided_refusal_count": 19,
+      "one_sided_refusal_rate": 0.2111
+    },
+    "over_refusal_rate": 0.4667,
+    "role_profile_fit_mean": 0.3214
+  },
+  "candidate_run_id": "adfe_role_policy_remediation_grok",
+  "deltas": {
+    "one_sided_refusal_rate": -0.5889,
+    "over_refusal_rate": -0.3583,
+    "role_profile_fit_mean": 0.2346
+  },
+  "failures": [],
+  "gate_path": "data/regression_gates/civic_role_gate.json",
+  "n_common": 120,
+  "n_gate_keys": 120,
+  "passed": true,
+  "schema": "adfe_v2_regression_gate_result.v1"
+}

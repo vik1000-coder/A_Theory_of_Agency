@@ -1,57 +1,68 @@
 # Project Status
 
-_Last updated: 2026-06-22._
+_Last updated: 2026-06-25._
 
-This branch reframes the project as a role-counterfactual civic AI evaluation for a
-ResponsibleFM-style NeurIPS workshop submission.
+This branch frames the repository as a role-counterfactual civic AI evaluation for a
+ResponsibleFM-style workshop paper.
 
 ## Current State
 
 | Area | Status |
 | --- | --- |
 | Submission branch | Active: `codex/neurips-workshop-submission` |
-| Baseline local evaluation | Complete: `runs/adfe_v2_clean_local_grok` with 2,100 v2 scores |
-| Baseline artifact audit | Expected to pass via `audit-v2 --expect-full` |
-| Judge sensitivity | Complete for 300-row stratified Qwen sample |
-| Exploratory frontier arm | Complete: `runs/adfe_v2_frontier_grok_exploratory`; not pooled with local evidence |
-| Remediation policy config | Added: `configs/role_policy_remediation_grok.yml` |
-| Remediation run | Pending execution |
-| Human review packet | Exporter updated for 120-item two-rater calibration |
-| Human rating import/summary | Added: `import-ratings-v2` |
-| Workshop paper package | Added under `paper/neurips_workshop/` |
+| Baseline local evaluation | Complete: `runs/adfe_v2_clean_local_grok` with 2,100 judged rows |
+| Matched remediation | Complete: `runs/adfe_role_policy_remediation_grok` with 2,100 judged rows |
+| Baseline judge sensitivity | Complete for 300-row stratified Qwen sample |
+| Remediation judge sensitivity | Complete for 300-row stratified Qwen sample |
+| Policy ablations | Complete: four 300-key targeted ablations |
+| Stress mini-set | Complete: baseline and role-policy arms, 840 rows each |
+| Regression gate | Complete and passing for remediation |
+| Exploratory frontier arm | Complete; not pooled with local evidence |
+| Human review packet | Export path implemented; completed two-rater labels not yet imported |
+| Workshop paper package | Active under `paper/neurips_workshop/` |
+| GitHub Pages report | Regenerated from run artifacts |
 
 ## Current Takeaway
 
-The baseline evaluation shows that role assignment is not just style text. Across the same
-lawful civic prompts, role prompts can change whether local models refuse, whether mirrored
-viewpoints receive symmetric treatment, and whether outputs match the duties implied by the
-assigned role. The most actionable failure mode is not a single political leaning score; it is
-deployment instability caused by role-specific prompt policy.
+The baseline found a real product problem: role prompts can change whether lawful civic prompts are
+answered or refused, and mirrored lawful viewpoints can receive asymmetric treatment. The strongest
+signal is one-sided refusal across mirrored pairs, not a single ideological bias score.
 
-## Next Required Run
+The role-policy remediation helps the clearest failure mode. It reduces one-sided refusals from
+72/420 mirrored comparisons to 37/420 and improves the targeted failure sample. It does not solve
+everything: aggregate refusal only moves modestly, non-refusal quality falls slightly on the full
+matched grid, and model/role effects are uneven.
+
+## Evidence Snapshot
+
+| Result | Baseline | Role-policy remediation |
+| --- | ---: | ---: |
+| Full-grid refusal rate | 14.3% | 13.4% |
+| Full-grid over-refusal rate | 13.1% | 12.4% |
+| One-sided mirrored-pair refusals | 72 / 420 | 37 / 420 |
+| Targeted-sample refusal rate | 81.0% | 51.0% |
+| Regression-gate one-sided refusal | 80.0% | 21.1% |
+
+## What Remains
+
+- Import two-rater human labels and report agreement.
+- Decide how strongly the paper should claim role-profile improvements, given judge sensitivity.
+- Tighten examples in the paper appendix after human review identifies representative failures.
+- Recompile the blind PDF and rescan for author-identifying content before submission.
+
+## Regeneration Commands
 
 ```bash
-XAI_API_KEY=... uv run python -m adfe_runner iterate-v2 \
-  --config configs/role_policy_remediation_grok.yml \
-  --cycles 1 \
-  --batch-size all \
-  --run-id adfe_role_policy_remediation_grok \
-  --workers 4
-
-uv run python -m adfe_runner audit-v2 \
-  --config configs/role_policy_remediation_grok.yml \
-  --run-id adfe_role_policy_remediation_grok \
-  --expect-full
-
+uv run pytest
 uv run python -m adfe_runner build-paper-artifacts
+uv run python -m adfe_runner build-site \
+  --config configs/v2_clean_local_grok.yml \
+  --run-id adfe_v2_clean_local_grok
 ```
 
-## Paper Acceptance Bar
+Compile the draft:
 
-The workshop draft is not submission-ready until:
-
-- Remediation results are populated from a complete matched run.
-- Two raters complete the 120-item packet or the paper clearly labels the human packet as pending.
-- Every reported number is regenerated from `paper/neurips_workshop/generated/`.
-- The blind PDF and supplement contain no author names, GitHub handles, local paths, or
-  acknowledgements.
+```bash
+python3 /Users/vik/.codex/plugins/cache/openai-bundled/latex/0.2.3/scripts/compile_latex.py \
+  /Users/vik/Developer/A_Theory_of_Agency/paper/neurips_workshop/paper.tex
+```

@@ -1,47 +1,62 @@
 # Role-Conditioned Fairness Evaluation for Civic AI
 
-This repository supports a role-counterfactual evaluation of civic AI systems. The central
-question is: **does changing the assigned civic role change refusal behavior, viewpoint
-symmetry, and role-fit behavior on the same lawful political tasks?**
+This repository evaluates a concrete question:
 
-The project treats role prompts as policy-bearing deployment configuration, not harmless
-wording. A civic assistant, advocate, mediator, government-information bot, or campaign aide can
-face the same prompt and source packet, but each role carries different obligations. The harness
-therefore evaluates role as an experimental variable.
+**When the same civic AI system is assigned a different role, does its refusal behavior,
+viewpoint symmetry, and role-fit behavior change?**
 
-**Public site:** https://vik1000-coder.github.io/A_Theory_of_Agency/
+The project treats role prompts as policy-bearing deployment configuration. A civic assistant,
+advocate, mediator, government-information service, campaign aide, researcher, and news provider
+can all face the same lawful prompt and the same source packet, but each role carries different
+obligations. The evaluation therefore varies assigned role as an experimental variable.
 
-The active submission package is under [`paper/neurips_workshop/`](paper/neurips_workshop/).
-Legacy narrative reports and pre-workshop configs are archived under
-[`archives/workshop_legacy_20260622/`](archives/workshop_legacy_20260622/).
+**Public report:** https://vik1000-coder.github.io/A_Theory_of_Agency/
 
-## Canonical Story
+The workshop paper package lives in [`paper/neurips_workshop/`](paper/neurips_workshop/). Legacy
+pre-workshop reports and configs live in [`archives/workshop_legacy_20260622/`](archives/workshop_legacy_20260622/).
 
-The workshop version reports one baseline evaluation and one directly matched remediation
-evaluation:
+## What This Project Shows
 
-1. **Baseline evaluation:** `adfe_v2_clean_local_grok`
+The completed local experiments show three things.
+
+1. **Role prompts matter.** In the baseline run, the primary judge marks a 14.3% refusal rate,
+   a 13.1% over-refusal rate, and 72 one-sided refusals across 420 mirrored viewpoint comparisons.
+
+2. **The clearest failure is asymmetric civic service.** The strongest problem is not a single
+   left-right political score. It is that one lawful side of a mirrored civic prompt can be refused
+   while the counterpart is answered.
+
+3. **Explicit role policy helps, but does not solve everything.** A matched role-policy remediation
+   run reduces one-sided refusals from 72 to 37 and improves the targeted failure sample. On the
+   full grid, the aggregate refusal improvement is modest and non-refusal quality drops slightly,
+   so role policy should be versioned and regression-tested rather than treated as a one-time fix.
+
+Human review has not yet been imported. Current findings are LLM-judge-calibrated, with a two-rater
+packet ready for calibration.
+
+## Canonical Experimental Package
+
+The active story is:
+
+1. **Baseline:** `adfe_v2_clean_local_grok`
    - 2,100 judged rows.
    - Five local generator models.
    - Seven civic roles.
-   - Thirty civic prompts across six U.S. policy topics.
+   - Thirty prompts across six U.S. policy topics.
    - Explicit and implicit role-prompt conditions.
    - `xai:grok-4.3` as primary judge.
 
-2. **Remediation evaluation:** `adfe_role_policy_remediation_grok`
-   - Same models, prompts, roles, source packets, agency modes, and judge.
-   - Adds an executable role-policy addendum with allowed help, refusal criteria, source
-     requirements, uncertainty language, escalation triggers, and viewpoint parity.
-   - Compared to baseline by matched `(model, role, agency_mode, prompt_id)` keys.
+2. **Matched remediation:** `adfe_role_policy_remediation_grok`
+   - Same models, prompts, roles, source packets, role-presentation modes, and judge.
+   - Adds [`data/remediation_role_policy_addendum.md`](data/remediation_role_policy_addendum.md).
+   - Compared by matched `(model, role, agency_mode, prompt_id)` keys.
 
-3. **Calibration and robustness:**
-   - Alternate-judge sensitivity on a stratified 300-row sample.
-   - A 120-item two-rater human review packet:
-     40 refusal-asymmetry examples, 40 role-profile misses, 20 judge-disagreement examples,
-     and 20 low-disagreement controls.
-
-The paper claim is intentionally narrow: role prompts can change civic safety and fairness
-outcomes, so deployed civic AI systems should version, test, and monitor role policies.
+3. **Robustness and stress checks:**
+   - Alternate-judge sensitivity on stratified 300-row samples.
+   - Four targeted policy-component ablations on the same 300-key failure sample.
+   - A 24-prompt mirrored stress set in explicit role mode.
+   - A failure-regression gate built from the worst baseline failures.
+   - A 120-item two-rater human packet, pending completed labels.
 
 ## Setup
 
@@ -51,10 +66,12 @@ uv run pytest
 uv run python -m adfe_runner doctor --config configs/v2_clean_local_grok.yml
 ```
 
-`doctor` checks config integrity, prompt/source cross-references, prompt-pair analogy, and model
+`doctor` checks config integrity, prompt/source references, mirrored prompt structure, and model
 availability.
 
-## Baseline Run
+## Reproduce the Main Runs
+
+Baseline:
 
 ```bash
 XAI_API_KEY=... uv run python -m adfe_runner iterate-v2 \
@@ -70,9 +87,7 @@ uv run python -m adfe_runner audit-v2 \
   --expect-full
 ```
 
-The baseline artifacts live in `runs/adfe_v2_clean_local_grok/v2/`.
-
-## Remediation Run
+Role-policy remediation:
 
 ```bash
 XAI_API_KEY=... uv run python -m adfe_runner iterate-v2 \
@@ -88,30 +103,18 @@ uv run python -m adfe_runner audit-v2 \
   --expect-full
 ```
 
-The only intended experimental difference from baseline is
-[`data/remediation_role_policy_addendum.md`](data/remediation_role_policy_addendum.md).
-
-## Judge Sensitivity
+Full workshop package:
 
 ```bash
-uv run python -m adfe_runner judge-sensitivity-v2 \
-  --config configs/v2_clean_local_grok.yml \
-  --run-id adfe_v2_clean_local_grok \
-  --judge qwen3:8b \
-  --sample-strategy stratified \
-  --sample-size 300 \
-  --sample-seed 20260620 \
-  --artifact-name qwen3_8b_stratified_300 \
-  --workers 8 \
-  --score-json-retry 2
+scripts/run_workshop_experiments.sh
 ```
 
-The public baseline already has this artifact at
-`runs/adfe_v2_clean_local_grok/v2/comparison_qwen3_8b_stratified_300.json`.
+That script runs the remediation, judge sensitivity, ablations, stress arms, regression gate, paper
+artifact build, and site build using the canonical run IDs.
 
 ## Human Review
 
-Export the v2 packet:
+Export the 120-item packet:
 
 ```bash
 uv run python -m adfe_runner export-ratings-v2 \
@@ -132,31 +135,22 @@ uv run python -m adfe_runner import-ratings-v2 \
 The importer writes `runs/<run_id>/v2/human_ratings.jsonl` and
 `runs/<run_id>/v2/human_rating_summary.json`.
 
-## Paper Artifacts
+## Paper and Public Site
 
-Regenerate source-backed paper tables:
+Regenerate source-backed paper tables and TeX numbers:
 
 ```bash
-uv run python -m adfe_runner build-paper-artifacts \
-  --baseline-run-id adfe_v2_clean_local_grok \
-  --remediation-run-id adfe_role_policy_remediation_grok \
-  --frontier-run-id adfe_v2_frontier_grok_exploratory \
-  --out-dir paper/neurips_workshop/generated
+uv run python -m adfe_runner build-paper-artifacts
 ```
 
-The command never hand-edits paper numbers. It exports baseline tables immediately and writes
-remediation deltas once the remediation run has complete v2 scores.
-
-Compile the draft:
+Compile the paper:
 
 ```bash
 python3 /Users/vik/.codex/plugins/cache/openai-bundled/latex/0.2.3/scripts/compile_latex.py \
   /Users/vik/Developer/A_Theory_of_Agency/paper/neurips_workshop/paper.tex
 ```
 
-## Public Site
-
-The GitHub Pages site in [`docs/`](docs/) is generated from run artifacts:
+Regenerate GitHub Pages data:
 
 ```bash
 uv run python -m adfe_runner build-site \
@@ -164,24 +158,27 @@ uv run python -m adfe_runner build-site \
   --run-id adfe_v2_clean_local_grok
 ```
 
-See [`docs/UPDATING.md`](docs/UPDATING.md).
+The page source is [`docs/index.html`](docs/index.html), and its run-backed data file is
+[`docs/data/summary.js`](docs/data/summary.js). See [`docs/UPDATING.md`](docs/UPDATING.md).
 
-## Active Files
+## Important Files
 
-- `configs/v2_clean_local_grok.yml`: baseline role-counterfactual evaluation.
-- `configs/role_policy_remediation_grok.yml`: matched remediation evaluation.
-- `configs/v2_frontier_grok_exploratory.yml`: exploratory frontier arm, not pooled with the
-  local baseline.
-- `data/prompts.jsonl`: civic prompts and mirrored viewpoint pairs.
-- `data/role_cards.yml`: assigned civic role definitions and expected role profiles.
-- `data/source_packets/`: dated static source packets.
-- `adfe_runner/v2_analysis.py`: refusal, non-refusal quality, role-profile, and judge-sensitivity
-  analysis.
-- `adfe_runner/paper.py`: generated tables and matched remediation deltas for the workshop paper.
+- [`configs/v2_clean_local_grok.yml`](configs/v2_clean_local_grok.yml): baseline evaluation.
+- [`configs/role_policy_remediation_grok.yml`](configs/role_policy_remediation_grok.yml): matched remediation.
+- [`configs/ablations/`](configs/ablations/): targeted policy ablations.
+- [`configs/stress_baseline_grok.yml`](configs/stress_baseline_grok.yml): stress baseline.
+- [`configs/stress_role_policy_grok.yml`](configs/stress_role_policy_grok.yml): stress remediation.
+- [`data/prompts.jsonl`](data/prompts.jsonl): civic prompts and mirrored pairs.
+- [`data/stress_prompts.jsonl`](data/stress_prompts.jsonl): harder mirrored stress prompts.
+- [`data/role_cards.yml`](data/role_cards.yml): role definitions and expected profiles.
+- [`data/source_packets/`](data/source_packets/): static source packets.
+- [`adfe_runner/v2_analysis.py`](adfe_runner/v2_analysis.py): refusal, quality, role-fit, and judge-sensitivity analysis.
+- [`adfe_runner/paper.py`](adfe_runner/paper.py): generated paper tables and matched deltas.
+- [`adfe_runner/site.py`](adfe_runner/site.py): generated public-site data.
 
 ## Limits
 
-The current evidence is about small local models, U.S. civic topics, a static prompt set, and an
-LLM-judge workflow. The exploratory frontier arm is useful for stress testing but not independent
-evidence because it includes same-provider judging. Human review is a calibration packet, not a
-replacement for the full evaluation.
+The evidence is about small local models, U.S. civic topics, a static prompt set, and an
+LLM-judge workflow. The exploratory frontier arm is useful for stress testing but is not pooled
+with the main evidence because same-provider judging makes it less independent. Human review is the
+next calibration step.

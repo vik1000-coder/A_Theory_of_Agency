@@ -507,6 +507,37 @@ def _v2_frontier_block(root: Path) -> dict[str, Any]:
     }
 
 
+def _latest_v2_comparison(run_root: Path) -> dict[str, Any]:
+    comparisons = sorted((run_root / "v2").glob("comparison_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return _load_json(comparisons[0]) if comparisons else {}
+
+
+def _workshop_block(root: Path) -> dict[str, Any]:
+    """Read the canonical workshop experiment summary generated for the paper."""
+    metrics_path = root / "paper" / "neurips_workshop" / "generated" / "paper_metrics.json"
+    metrics = _load_json(metrics_path)
+    if not metrics:
+        return {"available": False}
+    payload = dict(metrics)
+    payload["available"] = True
+    payload["metrics_path"] = str(metrics_path.relative_to(root))
+
+    remediation_run_id = payload.get("remediation", {}).get("run_id")
+    if remediation_run_id:
+        remediation_comparison = _latest_v2_comparison(root / "runs" / remediation_run_id)
+        if remediation_comparison:
+            payload["remediation_judge_robustness"] = {
+                "available": True,
+                "n_common": remediation_comparison.get("n_common"),
+                "refusal_agreement_rate": remediation_comparison.get("refusal_agreement_rate"),
+                "poststratified": remediation_comparison.get("poststratified", {}),
+                "role_profile_mean_abs_delta": remediation_comparison.get("role_profile_mean_abs_delta"),
+            }
+        else:
+            payload["remediation_judge_robustness"] = {"available": False}
+    return payload
+
+
 def _compact_validation(report: dict[str, Any]) -> dict[str, Any]:
     if not report:
         return {}
@@ -654,6 +685,7 @@ def build_summary(root: Path, run_dir: Path | None, validation_dir: Path | None)
         "judge_sensitivity": sensitivity,
         "v2": v2,
         "v2_frontier": _v2_frontier_block(root),
+        "workshop": _workshop_block(root),
         "frontier": _frontier_block(root),
         "overall": overall,
         "refusal_mediation": analysis.get("refusal_mediation", {}),
