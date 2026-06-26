@@ -3,6 +3,7 @@
 \usepackage[margin=1in]{geometry}
 \usepackage{booktabs}
 \usepackage{amsmath}
+\usepackage{amssymb}
 \usepackage{url}
 \usepackage{hyperref}
 
@@ -97,6 +98,69 @@ is also judged by \texttt{qwen3:8b}. The two judges agree on baseline refusal la
 \JudgePostMismatch{}. Role-profile scores are less stable than refusal labels, so role-fit claims
 should be read as LLM-judge-calibrated until human labels are imported.
 
+\section{Where the Numbers Come From}
+
+The main baseline count is a full factorial grid:
+\[
+5\ \text{models} \times 7\ \text{roles} \times 30\ \text{prompts} \times
+2\ \text{role-presentation modes} = \BaselineRows{}\ \text{rows}.
+\]
+Each row is generated once and then scored once by the primary judge. The raw generations are stored
+under \texttt{runs/adfe\_v2\_clean\_local\_grok/generations.jsonl}. The primary judge scores are
+stored under \texttt{runs/adfe\_v2\_clean\_local\_grok/v2/xai\_grok-4.3/scores.jsonl}. The aggregate
+analysis is stored in \texttt{runs/adfe\_v2\_clean\_local\_grok/v2/analysis.json}. Paper tables and
+macros are regenerated from those artifacts by \texttt{adfe\_runner build-paper-artifacts}; the
+paper does not hand-enter the headline counts.
+
+The \BaselinePairCount{} mirrored-pair comparisons come from six matched prompt pairs. For each
+matched pair, the comparison is repeated under the same five models, seven roles, and two
+role-presentation modes:
+\[
+6\ \text{prompt pairs} \times 5\ \text{models} \times 7\ \text{roles} \times
+2\ \text{modes} = \BaselinePairCount{}\ \text{pair comparisons}.
+\]
+For each pair comparison, the analysis holds \texttt{model}, \texttt{role}, \texttt{agency\_mode},
+and \texttt{cycle} fixed and compares only the two matched prompt IDs.
+
+\section{Empirical Definitions}
+
+We use the following operational definitions. They are intentionally behavioral rather than
+ideological.
+
+\paragraph{Context effect.}
+A context effect is any change in model behavior associated with role, topic, prompt framing, or
+role-presentation mode under otherwise matched conditions. Context effects are expected in this
+setting; they are not automatically bias.
+
+\paragraph{Fairness failure or behavioral bias.}
+The primary fairness signal is unjustified asymmetric treatment of comparable civic requests. The
+cleanest measured case is one-sided refusal in a matched prompt pair: for the same model, role,
+role-presentation mode, and cycle, one prompt is refused and its counterpart is answered. Formally,
+for matched pair members \(a\) and \(b\), one-sided refusal is
+\[
+|\mathbb{1}[\text{refusal}_a] - \mathbb{1}[\text{refusal}_b]| = 1.
+\]
+The one-sided refusal rate is the mean of this indicator over all matched-pair comparisons. This is
+why \BaselineOneSidedPairs{} / \BaselinePairCount{} is the central baseline fairness statistic.
+
+\paragraph{Opinionatedness.}
+This experiment does not estimate a left-right ideology score or a party-preference latent
+variable. It measures opinionated behavior indirectly through refusal asymmetry, viewpoint-symmetry
+scores, and role-inappropriate persuasion. A separate opinion-valence study would be needed to say
+that a model consistently prefers one political position.
+
+\paragraph{Usefulness.}
+Usefulness is measured as access plus answer quality. Access is whether the model answers instead
+of refusing. Answer quality is scored only among non-refusals on six 0--1 dimensions
+\((U,E,V,C,D,M)\): user-agency fidelity, epistemic integrity, viewpoint symmetry, curation
+accountability, deliberative standing, and non-manipulation/refusal integrity. Refusals are not
+folded into the quality mean; refusal is measured separately.
+
+\paragraph{Role fit.}
+Role fit asks whether the output matches the assigned civic role. The judge assigns six 0--1
+role-profile scores, and the reported role-profile fit is their mean. This is different from answer
+quality: an answer can be fluent and informative while still sounding like the wrong role.
+
 \section{Metrics}
 
 The evaluation separates outcomes that are often collapsed into one score.
@@ -119,6 +183,13 @@ aide may help with persuasion in role-appropriate ways but should not deceive or
 The release gate is built from the worst baseline failures. A candidate role policy fails the gate
 if it increases one-sided refusal, worsens over-refusal, or worsens role-profile fit on those gated
 rows.
+
+\paragraph{Matched deltas and uncertainty.}
+For remediation, each candidate row is matched to its baseline counterpart by
+\((\texttt{model}, \texttt{role}, \texttt{agency\_mode}, \texttt{prompt\_id})\). For binary metrics
+such as refusal, the per-row delta is \(-1\), \(0\), or \(+1\). For score metrics, the per-row delta
+is the candidate score minus the baseline score. We report the mean paired delta and an approximate
+95\% confidence interval computed as \(\bar{x} \pm 1.96\,s/\sqrt{n}\) over the paired deltas.
 
 \section{Baseline Results}
 
@@ -161,16 +232,18 @@ viewpoint-parity rule.
 
 On the full matched grid, remediation modestly reduces aggregate refusal and over-refusal. Refusal
 falls from \BaselineRefusalRate{} to \RemediationRefusalRate{} (\RemediationRefusalDelta{} matched
-delta), and over-refusal falls from \BaselineOverRefusalRate{} to \RemediationOverRefusalRate{}
-(\RemediationOverRefusalDelta{} matched delta). The more important result is on mirrored pairs:
+delta; approximate 95\% CI \RemediationRefusalDeltaCI{}), and over-refusal falls from
+\BaselineOverRefusalRate{} to \RemediationOverRefusalRate{} (\RemediationOverRefusalDelta{} matched
+delta; approximate 95\% CI \RemediationOverRefusalDeltaCI{}). The more important result is on mirrored pairs:
 one-sided refusals fall from \BaselineOneSidedPairs{} to \RemediationOneSidedPairs{}
 (\BaselineOneSidedRate{} to \RemediationOneSidedRate{}). This is the clearest evidence that the
 policy addendum changed a concrete civic failure mode.
 
 The intervention is not free. Matched role-profile fit changes by \RemediationProfileDelta{}, and
-matched non-refusal quality changes by \RemediationQualityDelta{}. In other words, the policy makes
-the system less likely to refuse one side of a matched pair, but the answers it newly allows
-are not automatically better by every judged dimension.
+matched non-refusal quality changes by \RemediationQualityDelta{} (approximate 95\% CI
+\RemediationQualityDeltaCI{}). In other words, the policy makes the system less likely to refuse
+one side of a matched pair, but the answers it newly allows are not automatically better by every
+judged dimension.
 
 \begin{table}[t]
 \centering

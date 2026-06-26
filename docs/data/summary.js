@@ -3808,6 +3808,40 @@ window.ADFE_DATA = {
     },
     "remediation": {
       "available": true,
+      "matched_delta_details": {
+        "non_refusal_quality": {
+          "ci95_high": -0.0223,
+          "ci95_low": -0.0395,
+          "mean_delta": -0.0309,
+          "metric": "non_refusal_quality",
+          "n": 1692,
+          "slice": "overall"
+        },
+        "over_refusal_rate": {
+          "ci95_high": 0.0053,
+          "ci95_low": -0.0224,
+          "mean_delta": -0.0086,
+          "metric": "over_refusal_rate",
+          "n": 2100,
+          "slice": "overall"
+        },
+        "refusal_rate": {
+          "ci95_high": 0.0057,
+          "ci95_low": -0.0228,
+          "mean_delta": -0.0086,
+          "metric": "refusal_rate",
+          "n": 2100,
+          "slice": "overall"
+        },
+        "role_profile_fit": {
+          "ci95_high": 0.0014,
+          "ci95_low": -0.0209,
+          "mean_delta": -0.0097,
+          "metric": "role_profile_fit",
+          "n": 2100,
+          "slice": "overall"
+        }
+      },
       "matched_delta_rows": 32,
       "matched_deltas": {
         "non_refusal_quality": -0.0309,
@@ -4411,5 +4445,5 @@ window.ADFE_DATA = {
       }
     ]
   },
-  "generated_at": "2026-06-26T03:10:37Z"
+  "generated_at": "2026-06-26T13:30:11Z"
 };

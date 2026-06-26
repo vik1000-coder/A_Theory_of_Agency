@@ -85,11 +85,27 @@ def _pp(value: Any) -> str:
     return f"{value * 100:+.1f} pp"
 
 
+def _pp_ci(row: dict[str, Any]) -> str:
+    low = row.get("ci95_low")
+    high = row.get("ci95_high")
+    if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
+        return "--"
+    return f"[{low * 100:+.1f} pp, {high * 100:+.1f} pp]"
+
+
 def _signed_score(value: Any) -> str:
     if not isinstance(value, (int, float)):
         return "--"
     text = f"{value:+.3f}".rstrip("0").rstrip(".")
     return text if text not in {"+0", "-0"} else "0"
+
+
+def _signed_score_ci(row: dict[str, Any]) -> str:
+    low = row.get("ci95_low")
+    high = row.get("ci95_high")
+    if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
+        return "--"
+    return f"[{_signed_score(low)}, {_signed_score(high)}]"
 
 
 def _tex_value(value: Any) -> str:
@@ -111,6 +127,7 @@ def _write_numbers_tex(path: Path, summary: dict[str, Any]) -> None:
     remediation_overall = remediation.get("overall", {})
     remediation_paired = remediation.get("paired_refusal", {})
     remediation_deltas = remediation.get("matched_deltas", {})
+    remediation_delta_details = remediation.get("matched_delta_details", {})
     regression = summary.get("regression_gate", {})
     regression_baseline = regression.get("baseline", {})
     regression_candidate = regression.get("candidate", {})
@@ -146,9 +163,13 @@ def _write_numbers_tex(path: Path, summary: dict[str, Any]) -> None:
         f"\\newcommand{{\\RemediationOneSidedPairs}}{{{_tex_value(remediation_paired.get('one_sided_refusal_count'))}}}",
         f"\\newcommand{{\\RemediationOneSidedRate}}{{{_pct(remediation_paired.get('one_sided_refusal_rate'))}}}",
         f"\\newcommand{{\\RemediationRefusalDelta}}{{{_pp(remediation_deltas.get('refusal_rate'))}}}",
+        f"\\newcommand{{\\RemediationRefusalDeltaCI}}{{{_pp_ci(remediation_delta_details.get('refusal_rate', {}))}}}",
         f"\\newcommand{{\\RemediationOverRefusalDelta}}{{{_pp(remediation_deltas.get('over_refusal_rate'))}}}",
+        f"\\newcommand{{\\RemediationOverRefusalDeltaCI}}{{{_pp_ci(remediation_delta_details.get('over_refusal_rate', {}))}}}",
         f"\\newcommand{{\\RemediationProfileDelta}}{{{_signed_score(remediation_deltas.get('role_profile_fit'))}}}",
+        f"\\newcommand{{\\RemediationProfileDeltaCI}}{{{_signed_score_ci(remediation_delta_details.get('role_profile_fit', {}))}}}",
         f"\\newcommand{{\\RemediationQualityDelta}}{{{_signed_score(remediation_deltas.get('non_refusal_quality'))}}}",
+        f"\\newcommand{{\\RemediationQualityDeltaCI}}{{{_signed_score_ci(remediation_delta_details.get('non_refusal_quality', {}))}}}",
         f"\\newcommand{{\\TargetedBaselineRefusalRate}}{{{_pct(targeted_baseline.get('refusal_rate'))}}}",
         f"\\newcommand{{\\TargetedRows}}{{{_tex_value(targeted.get('n_keys'))}}}",
         f"\\newcommand{{\\TargetedRemediationRefusalRate}}{{{_pct(targeted_remediation.get('refusal_rate'))}}}",
@@ -443,6 +464,10 @@ def build_paper_artifacts(
                         "over_refusal_rate": _overall_delta_row(delta_rows, "over_refusal_rate").get("mean_delta"),
                         "role_profile_fit": _overall_delta_row(delta_rows, "role_profile_fit").get("mean_delta"),
                         "non_refusal_quality": _overall_delta_row(delta_rows, "non_refusal_quality").get("mean_delta"),
+                    },
+                    "matched_delta_details": {
+                        metric: _overall_delta_row(delta_rows, metric)
+                        for metric in ("refusal_rate", "over_refusal_rate", "role_profile_fit", "non_refusal_quality")
                     },
                     "matched_delta_rows": len(delta_rows),
                 }

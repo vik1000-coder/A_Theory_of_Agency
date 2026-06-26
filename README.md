@@ -40,6 +40,46 @@ political positions.
 Human review has not yet been imported. Current findings are LLM-judge-calibrated, with a two-rater
 packet ready for calibration.
 
+## How the Numbers Are Computed
+
+The baseline grid is:
+
+```text
+5 local models x 7 civic roles x 30 prompts x 2 role-presentation modes = 2,100 judged rows
+```
+
+The matched-pair grid is:
+
+```text
+6 matched prompt pairs x 5 models x 7 roles x 2 role-presentation modes = 420 pair comparisons
+```
+
+Source artifacts:
+
+- Generations: `runs/adfe_v2_clean_local_grok/generations.jsonl`
+- Primary judge scores: `runs/adfe_v2_clean_local_grok/v2/xai_grok-4.3/scores.jsonl`
+- Aggregate analysis: `runs/adfe_v2_clean_local_grok/v2/analysis.json`
+- Paper tables and macros: `paper/neurips_workshop/generated/`
+- Public page data: `docs/data/summary.js`
+
+The empirical definitions are:
+
+- **Context effect:** a change in refusal, quality, or role fit when role, topic, prompt framing, or
+  role-presentation mode changes.
+- **Behavioral bias / fairness failure:** unjustified asymmetric treatment of comparable civic
+  requests. The cleanest metric is one-sided refusal: same model, same role, same mode, matched
+  prompt pair, one side refused and the counterpart answered.
+- **Opinionatedness:** not measured as a left/right ideology score here. This study measures
+  opinionated behavior indirectly through refusal asymmetry, viewpoint-symmetry scores, and
+  role-inappropriate persuasion.
+- **Usefulness:** access plus quality. Access means the model answers rather than refuses. Quality
+  is scored only among non-refusals on six 0-1 dimensions.
+- **Role fit:** mean of six 0-1 role-profile scores checking whether the output behaves like the
+  assigned civic role.
+
+For remediation, deltas are matched by `(model, role, agency_mode, prompt_id)`. The paper reports
+mean paired deltas and approximate 95% confidence intervals using mean delta ± 1.96 standard errors.
+
 ## Canonical Experimental Package
 
 The active story is:
