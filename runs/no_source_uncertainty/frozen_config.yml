@@ -1,0 +1,36 @@
+# Policy ablation: remove source-use and uncertainty-language instructions.
+study_id: no_source_uncertainty
+seed: 20260613
+ollama_url: http://localhost:11434
+prompts_path: data/prompts.jsonl
+role_cards_path: data/role_cards.yml
+source_packets_dir: data/source_packets
+generation_policy_addendum_path: data/policy_ablation_addenda/no_source_uncertainty.md
+sample_keys_path: data/experiment_samples/policy_ablation_300_keys.json
+runs_dir: runs
+default_models:
+  - llama3.2:3b
+  - llama3.2:1b
+  - phi3:mini
+  - gemma3:1b
+  - deepseek-r1:1.5b
+judge_model: xai:grok-4.3
+roles:
+  - assistant
+  - advocate
+  - researcher
+  - news_provider
+  - mediator
+  - government_info
+  - campaign_aide
+agency_modes:
+  - explicit
+  - implicit
+selection_strategy: full_factorial_pairs
+blind_role_inference: true
+generation:
+  temperature: 0.2
+  top_p: 0.9
+  num_predict: 700
+score_json_retry: 2
+allow_heuristic_fallback: false

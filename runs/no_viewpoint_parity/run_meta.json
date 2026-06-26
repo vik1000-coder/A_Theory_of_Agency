@@ -1,0 +1,21 @@
+{
+  "blind_role_inference": true,
+  "calibration_active": false,
+  "config_hash": "ebf61176c749842c44d0c6b47ded59227d9cb1261bee386a9d704b6c90a2c23c",
+  "config_path": "configs/ablations/no_viewpoint_parity.yml",
+  "contaminated": false,
+  "created_at": "2026-06-23T08:16:36Z",
+  "design_hash": "b797ab949ea16aa03b9e22534f4883b88fabc2c97c11060a4ee61b1f1bc19579",
+  "frozen_config": true,
+  "judge_model": "xai:grok-4.3",
+  "models": [
+    "llama3.2:3b",
+    "llama3.2:1b",
+    "phi3:mini",
+    "gemma3:1b",
+    "deepseek-r1:1.5b"
+  ],
+  "run_id": "no_viewpoint_parity",
+  "study_id": "no_viewpoint_parity",
+  "updated_at": "2026-06-23T08:16:36Z"
+}

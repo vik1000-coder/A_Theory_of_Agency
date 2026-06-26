@@ -1,6 +1,6 @@
 # Project Status
 
-_Last updated: 2026-06-25._
+_Last updated: 2026-06-26._
 
 This branch frames the repository as a role-counterfactual civic AI evaluation for a
 ResponsibleFM-style workshop paper.
@@ -21,6 +21,7 @@ ResponsibleFM-style workshop paper.
 | Human review packet | Export path implemented; completed two-rater labels not yet imported |
 | Workshop paper package | Active under `paper/neurips_workshop/` |
 | GitHub Pages report | Regenerated from run artifacts |
+| Canonical run artifacts | Tracked in `runs/` for handoff analysis |
 
 ## Current Takeaway
 
@@ -69,6 +70,6 @@ uv run python -m adfe_runner build-site \
 Compile the draft:
 
 ```bash
-python3 /Users/vik/.codex/plugins/cache/openai-bundled/latex/0.2.3/scripts/compile_latex.py \
-  /Users/vik/Developer/A_Theory_of_Agency/paper/neurips_workshop/paper.tex
+cd paper/neurips_workshop
+latexmk -pdf paper.tex
 ```

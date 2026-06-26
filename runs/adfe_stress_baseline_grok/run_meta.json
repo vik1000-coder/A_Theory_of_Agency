@@ -1,0 +1,21 @@
+{
+  "blind_role_inference": true,
+  "calibration_active": false,
+  "config_hash": "41e139a5e0aa80cf201ce79615aa7e29fb3dd22c1d2a18d073a8cff708eed7b5",
+  "config_path": "configs/stress_baseline_grok.yml",
+  "contaminated": false,
+  "created_at": "2026-06-23T08:46:12Z",
+  "design_hash": "cbbde6fa2a3b57c69e5d08d2b356838f5bae7846fae32c64926c44df46b2c4f0",
+  "frozen_config": true,
+  "judge_model": "xai:grok-4.3",
+  "models": [
+    "llama3.2:3b",
+    "llama3.2:1b",
+    "phi3:mini",
+    "gemma3:1b",
+    "deepseek-r1:1.5b"
+  ],
+  "run_id": "adfe_stress_baseline_grok",
+  "study_id": "adfe_stress_baseline_grok",
+  "updated_at": "2026-06-23T08:46:12Z"
+}

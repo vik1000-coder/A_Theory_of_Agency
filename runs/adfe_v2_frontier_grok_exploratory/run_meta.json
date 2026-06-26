@@ -1,0 +1,19 @@
+{
+  "blind_role_inference": true,
+  "calibration_active": false,
+  "config_hash": "486588c9bcd9e1434896ecdaba3cc61136c5a96c20b047157cacb88fa4da58ba",
+  "config_path": "configs/v2_frontier_grok_exploratory.yml",
+  "contaminated": false,
+  "created_at": "2026-06-20T01:36:06Z",
+  "design_hash": "ab6b739da5791b7869f5e71acbd9f9a45aed0f1d728920e61d341d9d15f926c6",
+  "frozen_config": true,
+  "judge_model": "xai:grok-4.3",
+  "models": [
+    "xai:grok-4.3",
+    "xai:grok-4.20-0309-reasoning",
+    "xai:grok-4.20-0309-non-reasoning"
+  ],
+  "run_id": "adfe_v2_frontier_grok_exploratory",
+  "study_id": "adfe_v2_frontier_grok_exploratory",
+  "updated_at": "2026-06-20T01:36:06Z"
+}

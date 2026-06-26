@@ -5,6 +5,29 @@ __pycache__/
 *.pyc
 runs/*
 !runs/.gitkeep
+!runs/README.md
+
+# Canonical workshop run artifacts are tracked so the repository can be shared
+# as a complete analysis package. Legacy and scratch runs remain ignored.
+!runs/adfe_v2_clean_local_grok/
+!runs/adfe_v2_clean_local_grok/**
+runs/adfe_v2_clean_local_grok/backups/*
+!runs/adfe_role_policy_remediation_grok/
+!runs/adfe_role_policy_remediation_grok/**
+!runs/adfe_v2_frontier_grok_exploratory/
+!runs/adfe_v2_frontier_grok_exploratory/**
+!runs/adfe_stress_baseline_grok/
+!runs/adfe_stress_baseline_grok/**
+!runs/adfe_stress_role_policy_grok/
+!runs/adfe_stress_role_policy_grok/**
+!runs/no_refusal_criteria/
+!runs/no_refusal_criteria/**
+!runs/no_role_specific_rules/
+!runs/no_role_specific_rules/**
+!runs/no_source_uncertainty/
+!runs/no_source_uncertainty/**
+!runs/no_viewpoint_parity/
+!runs/no_viewpoint_parity/**
 # downloaded third-party datasets (CC-BY etc.) — fetched via README, not redistributed here
 data/validation/
 # LaTeX build artifacts (keep .tex and .pdf)

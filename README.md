@@ -12,6 +12,8 @@ obligations. The evaluation therefore varies assigned role as an experimental va
 
 **Public report:** https://vik1000-coder.github.io/A_Theory_of_Agency/
 
+For an outside reviewer or collaborator, start with [`ANALYSIS_HANDOFF.md`](ANALYSIS_HANDOFF.md).
+
 The workshop paper package lives in [`paper/neurips_workshop/`](paper/neurips_workshop/). Legacy
 pre-workshop reports and configs live in [`archives/workshop_legacy_20260622/`](archives/workshop_legacy_20260622/).
 
@@ -94,6 +96,9 @@ Source artifacts:
 - Aggregate analysis: `runs/adfe_v2_clean_local_grok/v2/analysis.json`
 - Paper tables and macros: `paper/neurips_workshop/generated/`
 - Public page data: `docs/data/summary.js`
+
+Canonical raw run artifacts are tracked under [`runs/`](runs/); see [`runs/README.md`](runs/README.md)
+for the run inventory.
 
 The empirical definitions are:
 
@@ -225,8 +230,8 @@ uv run python -m adfe_runner build-paper-artifacts
 Compile the paper:
 
 ```bash
-python3 /Users/vik/.codex/plugins/cache/openai-bundled/latex/0.2.3/scripts/compile_latex.py \
-  /Users/vik/Developer/A_Theory_of_Agency/paper/neurips_workshop/paper.tex
+cd paper/neurips_workshop
+latexmk -pdf paper.tex
 ```
 
 Regenerate GitHub Pages data:
@@ -243,6 +248,8 @@ The page source is [`docs/index.html`](docs/index.html), and its run-backed data
 ## Important Files
 
 - [`configs/v2_clean_local_grok.yml`](configs/v2_clean_local_grok.yml): baseline evaluation.
+- [`ANALYSIS_HANDOFF.md`](ANALYSIS_HANDOFF.md): analyst-facing guide to methods, data, and results.
+- [`runs/README.md`](runs/README.md): canonical raw run-artifact inventory.
 - [`configs/role_policy_remediation_grok.yml`](configs/role_policy_remediation_grok.yml): matched remediation.
 - [`configs/ablations/`](configs/ablations/): targeted policy ablations.
 - [`configs/stress_baseline_grok.yml`](configs/stress_baseline_grok.yml): stress baseline.

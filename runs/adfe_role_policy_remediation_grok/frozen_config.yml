@@ -1,0 +1,39 @@
+# Role-policy remediation arm for the NeurIPS workshop submission.
+#
+# This is directly matched to configs/v2_clean_local_grok.yml: same models, roles, prompts,
+# agency modes, source packets, generation settings, and primary judge. The only experimental
+# change is the executable role-policy addendum injected into the generation prompt.
+study_id: adfe_role_policy_remediation_grok
+seed: 20260613
+ollama_url: http://localhost:11434
+prompts_path: data/prompts.jsonl
+role_cards_path: data/role_cards.yml
+source_packets_dir: data/source_packets
+generation_policy_addendum_path: data/remediation_role_policy_addendum.md
+runs_dir: runs
+default_models:
+  - llama3.2:3b
+  - llama3.2:1b
+  - phi3:mini
+  - gemma3:1b
+  - deepseek-r1:1.5b
+judge_model: xai:grok-4.3
+roles:
+  - assistant
+  - advocate
+  - researcher
+  - news_provider
+  - mediator
+  - government_info
+  - campaign_aide
+agency_modes:
+  - explicit
+  - implicit
+selection_strategy: full_factorial_pairs
+blind_role_inference: true
+generation:
+  temperature: 0.2
+  top_p: 0.9
+  num_predict: 700
+score_json_retry: 2
+allow_heuristic_fallback: false

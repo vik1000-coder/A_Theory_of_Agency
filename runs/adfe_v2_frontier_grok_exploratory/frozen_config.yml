@@ -1,0 +1,35 @@
+# ADFE v2 exploratory xAI frontier arm.
+#
+# This arm is deliberately labeled exploratory because xai:grok-4.3 is both the primary judge
+# and part of the audited generator population. Do not pool these numbers with the local arm;
+# use them to probe frontier behavior and same-provider-judge sensitivity only.
+study_id: adfe_v2_frontier_grok_exploratory
+seed: 20260613
+ollama_url: http://localhost:11434
+prompts_path: data/prompts.jsonl
+role_cards_path: data/role_cards.yml
+source_packets_dir: data/source_packets
+runs_dir: runs
+default_models:
+  - xai:grok-4.3
+  - xai:grok-4.20-0309-reasoning
+  - xai:grok-4.20-0309-non-reasoning
+judge_model: xai:grok-4.3
+roles:
+  - assistant
+  - advocate
+  - researcher
+  - news_provider
+  - mediator
+  - government_info
+  - campaign_aide
+agency_modes:
+  - explicit
+selection_strategy: full_factorial_pairs
+blind_role_inference: true
+generation:
+  temperature: 0.2
+  top_p: 0.9
+  num_predict: 700
+score_json_retry: 2
+allow_heuristic_fallback: false

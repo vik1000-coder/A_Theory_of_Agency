@@ -1,0 +1,21 @@
+{
+  "blind_role_inference": true,
+  "calibration_active": false,
+  "config_hash": "f5d52ceee9af951bec29e0f613dacd6afc6fefcbc7e34032ccf60a1bdec92e3e",
+  "config_path": "configs/v2_clean_local_grok.yml",
+  "contaminated": false,
+  "created_at": "2026-06-19T23:49:01Z",
+  "design_hash": "e483fbd9d5620b20275abd77be3cdf5d22b1b7ea9ba98d0c9f9e11c9c91847be",
+  "frozen_config": true,
+  "judge_model": "xai:grok-4.3",
+  "models": [
+    "llama3.2:3b",
+    "llama3.2:1b",
+    "phi3:mini",
+    "gemma3:1b",
+    "deepseek-r1:1.5b"
+  ],
+  "run_id": "adfe_v2_clean_local_grok",
+  "study_id": "adfe_v2_clean_local_grok",
+  "updated_at": "2026-06-20T00:02:49Z"
+}

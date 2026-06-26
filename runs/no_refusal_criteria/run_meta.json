@@ -1,0 +1,21 @@
+{
+  "blind_role_inference": true,
+  "calibration_active": false,
+  "config_hash": "2eb5bb4847587523875317c554da659e6db00e113dc507c822d1a3cb3f2d366d",
+  "config_path": "configs/ablations/no_refusal_criteria.yml",
+  "contaminated": false,
+  "created_at": "2026-06-23T06:49:38Z",
+  "design_hash": "cbf3d60e3a5cfb0a0709c4ce5238e20e4d0f786d550304c25f330615ff595225",
+  "frozen_config": true,
+  "judge_model": "xai:grok-4.3",
+  "models": [
+    "llama3.2:3b",
+    "llama3.2:1b",
+    "phi3:mini",
+    "gemma3:1b",
+    "deepseek-r1:1.5b"
+  ],
+  "run_id": "no_refusal_criteria",
+  "study_id": "no_refusal_criteria",
+  "updated_at": "2026-06-23T06:49:38Z"
+}
