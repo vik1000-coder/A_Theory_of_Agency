@@ -24,14 +24,20 @@ ResponsibleFM-style workshop paper.
 
 ## Current Takeaway
 
-The baseline found a real product problem: role prompts can change whether lawful civic prompts are
-answered or refused, and mirrored lawful viewpoints can receive asymmetric treatment. The strongest
-signal is one-sided refusal across mirrored pairs, not a single ideological bias score.
+The baseline found a real product problem: context changes civic behavior. Role prompts can change
+whether comparable civic requests are answered or refused, and matched prompt pairs can receive
+asymmetric treatment. The strongest signal is one-sided refusal across matched pairs, not a single
+ideological bias score.
 
 The role-policy remediation helps the clearest failure mode. It reduces one-sided refusals from
 72/420 mirrored comparisons to 37/420 and improves the targeted failure sample. It does not solve
 everything: aggregate refusal only moves modestly, non-refusal quality falls slightly on the full
 matched grid, and model/role effects are uneven.
+
+The pattern is partly justifiable and partly not. It is justifiable for a government-information
+role to avoid persuasion or for a mediator to map disagreement. It is not justifiable for the same
+model-role-mode setting to refuse one side of a matched civic pair while answering the counterpart,
+unless the task content itself explains the difference.
 
 ## Evidence Snapshot
 

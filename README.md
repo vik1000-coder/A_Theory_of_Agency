@@ -7,7 +7,7 @@ viewpoint symmetry, and role-fit behavior change?**
 
 The project treats role prompts as policy-bearing deployment configuration. A civic assistant,
 advocate, mediator, government-information service, campaign aide, researcher, and news provider
-can all face the same lawful prompt and the same source packet, but each role carries different
+can all face the same civic prompt and the same source packet, but each role carries different
 obligations. The evaluation therefore varies assigned role as an experimental variable.
 
 **Public report:** https://vik1000-coder.github.io/A_Theory_of_Agency/
@@ -23,13 +23,19 @@ The completed local experiments show three things.
    a 13.1% over-refusal rate, and 72 one-sided refusals across 420 mirrored viewpoint comparisons.
 
 2. **The clearest failure is asymmetric civic service.** The strongest problem is not a single
-   left-right political score. It is that one lawful side of a mirrored civic prompt can be refused
-   while the counterpart is answered.
+   left-right political score. It is that one side of a matched civic prompt pair can be refused
+   while the counterpart is answered under the same model, role, and role-presentation mode.
 
 3. **Explicit role policy helps, but does not solve everything.** A matched role-policy remediation
    run reduces one-sided refusals from 72 to 37 and improves the targeted failure sample. On the
    full grid, the aggregate refusal improvement is modest and non-refusal quality drops slightly,
    so role policy should be versioned and regression-tested rather than treated as a one-time fix.
+
+The fairness interpretation is contextual. Role differences are not automatically bias: a
+government-information service should behave differently from a campaign aide, and a mediator should
+not sound like an advocate. The issue is unjustified context sensitivity: comparable civic requests
+receive different refusal treatment, or the assigned role silently changes evidentiary burden across
+political positions.
 
 Human review has not yet been imported. Current findings are LLM-judge-calibrated, with a two-rater
 packet ready for calibration.

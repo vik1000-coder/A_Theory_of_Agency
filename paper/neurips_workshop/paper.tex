@@ -19,7 +19,7 @@
 Civic AI systems are commonly deployed with role prompts: assistant, advocate, mediator, news
 provider, government information service, campaign aide, or researcher. These roles are often
 treated as style settings. We argue that they are policy controls. A role prompt can change what
-help is allowed, when the system refuses, whether mirrored lawful viewpoints receive symmetric
+help is allowed, when the system refuses, whether matched civic viewpoints receive symmetric
 treatment, and whether an answer fits the institutional duty implied by the role. We introduce a
 role-counterfactual evaluation for civic AI systems: hold the prompt, topic, source packet, model,
 and judge fixed, then vary the assigned role and measure refusal, viewpoint symmetry, role-profile
@@ -39,15 +39,15 @@ is that assigned role is an experimental variable and should be versioned, teste
 
 Civic AI systems do not just answer questions. They answer questions while claiming to act as a
 particular kind of civic actor. A general assistant, campaign aide, government information service,
-mediator, researcher, advocate, and news provider can all receive the same lawful political prompt
+mediator, researcher, advocate, and news provider can all receive the same civic prompt
 and the same source packet, but each role carries different obligations. Some roles may help the
 user craft a persuasive argument. Some should not persuade at all. Some should summarize procedure.
 Some should map disagreement. The role prompt is therefore not cosmetic; it is part of the deployed
 policy.
 
 This creates a problem for fairness evaluation. A flat question such as ``is this model politically
-biased?'' misses several deployment failures that matter to users. A system can refuse one lawful
-viewpoint while answering its mirrored counterpart. It can provide campaign-style persuasion while
+biased?'' misses several deployment failures that matter to users. A system can refuse one
+in-scope civic request while answering its matched counterpart. It can provide campaign-style persuasion while
 assigned a government-information role. It can answer fluently while failing the evidentiary or
 non-manipulation obligations of the role it was asked to perform. These are role-conditioned failures,
 not just differences in tone.
@@ -59,7 +59,7 @@ release if the new policy worsens civic safety or fairness.
 
 Our contributions are:
 \begin{enumerate}
-  \item a role-counterfactual civic evaluation design with mirrored lawful viewpoint prompts;
+  \item a role-counterfactual civic evaluation design with mirrored civic prompt pairs;
   \item a metric split between refusal, over-refusal, viewpoint symmetry, role-profile fit, and
   non-refusal quality;
   \item a matched remediation experiment that treats role-policy instructions as the intervention;
@@ -84,11 +84,11 @@ news provider, mediator, government information, and campaign aide. Each role ca
 behavior over six dimensions: user-agency fidelity, epistemic integrity, viewpoint symmetry,
 curation accountability, deliberative standing, and non-manipulation/refusal integrity.
 
-\paragraph{Mirrored lawful viewpoints.}
+\paragraph{Mirrored civic prompt pairs.}
 Some prompts are mirrored pairs. The intended difference is viewpoint, not legality or task type.
-One prompt may ask for a lawful argument for one side of a policy debate; the paired prompt asks for
-the mirrored lawful argument for the other side. If the same model-role-mode setting refuses one
-side and answers the other, that is a concrete viewpoint-symmetry failure.
+One prompt asks for one side of a civic argument or policy framing; the paired prompt asks for the
+counterpart framing. If the same model-role-mode setting refuses one side and answers the other,
+that is a concrete viewpoint-symmetry failure.
 
 \paragraph{Judging.}
 The primary judge is \texttt{xai:grok-4.3}. A stratified \JudgeSensitivityRows{}-row baseline sample
@@ -104,7 +104,7 @@ The evaluation separates outcomes that are often collapsed into one score.
 \paragraph{Refusal and over-refusal.}
 We measure the refusal rate, the over-refusal rate, topic-level refusal, and one-sided refusal across
 mirrored prompt pairs. A refusal is counted as over-refusal when the judge marks it unwarranted for
-the lawful task.
+the in-scope civic request.
 
 \paragraph{Quality among answers.}
 Quality is averaged only among non-refused outputs. This avoids hiding refusal behavior inside a
@@ -113,7 +113,7 @@ single quality score.
 \paragraph{Role-profile fit.}
 Role-profile fit asks whether the output matches the assigned civic role. For example, a
 government-information response should emphasize procedural clarity and non-persuasion; a campaign
-aide may lawfully help with persuasion but should not deceive or manipulate.
+aide may help with persuasion in role-appropriate ways but should not deceive or manipulate.
 
 \paragraph{Regression gate.}
 The release gate is built from the worst baseline failures. A candidate role policy fails the gate
@@ -147,7 +147,7 @@ Alternate-judge refusal agreement & \JudgeRefusalAgreement{} \\
 
 The main baseline takeaway is not a single ideological direction. The actionable failure is
 instability: the same civic task can be answered or refused depending on role framing, mirrored
-lawful viewpoints can receive asymmetric treatment, and fluent answers can miss the assigned role's
+prompt pairs can receive asymmetric treatment, and fluent answers can miss the assigned role's
 institutional duty.
 
 \section{Role-Policy Remediation}
@@ -169,7 +169,7 @@ policy addendum changed a concrete civic failure mode.
 
 The intervention is not free. Matched role-profile fit changes by \RemediationProfileDelta{}, and
 matched non-refusal quality changes by \RemediationQualityDelta{}. In other words, the policy makes
-the system less likely to refuse one lawful side of a mirrored pair, but the answers it newly allows
+the system less likely to refuse one side of a matched pair, but the answers it newly allows
 are not automatically better by every judged dimension.
 
 \begin{table}[t]
@@ -211,30 +211,46 @@ arms still improve over the baseline on the targeted sample, which means the glo
 does real work. The most damaging removal is the role-specific rules: it gives back the most refusal
 and role-fit improvement relative to the full policy. The explicit viewpoint-parity line is not
 independently decisive in this sample, likely because other global instructions already imply
-viewpoint-neutral lawful assistance.
+viewpoint-neutral treatment of comparable in-scope requests.
 
-The stress set contains \StressBaselineRows{} explicit-mode rows built from harder mirrored lawful
+The stress set contains \StressBaselineRows{} explicit-mode rows built from harder mirrored civic
 prompts. Stress refusal changes from \StressBaselineRefusalRate{} to
 \StressRemediationRefusalRate{}, and one-sided stress-pair refusal changes from
 \StressBaselineOneSidedRate{} to \StressRemediationOneSidedRate{}. The stress result supports a
 more cautious claim: remediation helps the most obvious failures, but it does not uniformly improve
 every role, topic, or model.
 
-\section{Interpretation}
+\section{Interpretation: Context, Fairness, and Bias}
 
-The completed experiments support four claims.
+The completed experiments support five claims.
 
-First, role prompts are policy controls. Changing role framing changes refusal, role fit, and
-viewpoint-symmetry behavior under otherwise matched conditions.
+First, context changes model behavior. Assigned role, topic, and prompt framing all affect refusal,
+role fit, and viewpoint-symmetry behavior under otherwise matched conditions. This means civic bias
+cannot be summarized only as a model-level left-right preference. It also appears as
+context-conditioned access to assistance.
 
-Second, the most actionable baseline failure is not a left-right political score. It is asymmetric
-civic service: lawful mirrored viewpoints sometimes receive different refusal treatment.
+Second, not every context effect is unfair. Some role differences are expected and justified. A
+government-information service should avoid persuasion; a campaign aide can provide persuasive help
+within non-deceptive limits; a mediator should map disagreements rather than win an argument. A
+role-conditioned difference becomes a fairness problem when the role does not justify the change:
+for example, when one side of a matched civic pair is refused and the counterpart is answered, or
+when a role silently changes evidentiary burden across political positions.
 
-Third, clearer role policy can repair important failures, especially on known bad cases and
+This pattern is plausible but only partly justifiable. It makes sense that contested civic topics
+and institution-like roles trigger more caution. It also makes sense that role-specific policy rules
+matter more than a generic instruction to be fair. What does not make sense as a product behavior is
+unexplained asymmetry within matched prompt pairs. That is the fairness signal this evaluation is
+designed to isolate.
+
+Third, the most actionable baseline failure is asymmetric civic service. The issue is not simply
+that the model has one ideological direction. It is that comparable civic requests sometimes receive
+different refusal treatment, which changes who can obtain usable assistance.
+
+Fourth, clearer role policy can repair important failures, especially on known bad cases and
 mirrored-pair release gates. The intervention roughly halves one-sided refusals on the full grid and
 substantially improves the targeted failure sample.
 
-Fourth, remediation has tradeoffs. Some roles and models improve more than others, and non-refusal
+Fifth, remediation has tradeoffs. Some roles and models improve more than others, and non-refusal
 quality slightly declines on the full matched grid. A deployer should therefore treat role policy as
 a versioned control surface that needs repeated evaluation, not as a one-time prompt fix.
 
@@ -268,7 +284,8 @@ submission-ready version.
 \section{Conclusion}
 
 Role prompts are a control surface for civic AI policy. Treating them as mere style text hides
-failures that matter in deployment: one-sided lawful refusal, role-inappropriate help, unstable
+failures that matter in deployment: one-sided refusal of comparable civic requests,
+role-inappropriate help, unstable
 judge conclusions, and uneven remediation effects. A role-counterfactual evaluation makes these
 failures measurable and gives system builders a concrete loop: version role policies, test mirrored
 viewpoints, compare judges, route hard cases to human review, and block releases when role changes
@@ -290,7 +307,7 @@ from run artifacts and should be treated as the source of truth.
 The prompt set includes civic briefings, government-information requests, mediation tasks, and
 mirrored argument requests. Example task shapes include: explain what people should know about a
 policy area using the supplied source packet; summarize procedural public information without
-persuasion; map tradeoffs between two sides; and draft a lawful argument for one side of a policy
-debate with a mirrored counterpart for the other side.
+persuasion; map tradeoffs between two sides; and draft an argument for one side of a policy debate
+with a mirrored counterpart for the other side.
 
 \end{document}
