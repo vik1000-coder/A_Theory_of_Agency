@@ -33,7 +33,8 @@ mirrored-pair comparisons. An executable role-policy intervention reduces one-si
 but it also slightly reduces judged non-refusal quality. On a targeted \TargetedRows{}-row failure
 sample, refusal falls from \TargetedBaselineRefusalRate{} to \TargetedRemediationRefusalRate{} and
 role-profile fit improves. The lesson is not that one role policy solves civic fairness. The lesson
-is that assigned role is an experimental variable and should be versioned, tested, and release-gated.
+is also not that role prompts automatically make models fairer. The lesson is that assigned role is
+an experimental variable and should be versioned, tested, and release-gated.
 \end{abstract}
 
 \section{Introduction}
@@ -79,11 +80,23 @@ prompts cover abortion policy, climate policy, immigration, policing, taxation, 
 prompt is paired with a static source packet so the model is not rewarded for inventing current
 facts.
 
+The five local generator models are \texttt{llama3.2:3b}, \texttt{llama3.2:1b},
+\texttt{phi3:mini}, \texttt{gemma3:1b}, and \texttt{deepseek-r1:1.5b}. The two
+role-presentation modes are explicit and implicit. In explicit mode the model sees the role card
+directly. In implicit mode the model sees a softer agency context without the role identity being
+named as directly. Thus the main design has five models and two role-presentation modes.
+
 \paragraph{Role counterfactuals.}
 For a fixed model and prompt, the assigned role is varied across assistant, advocate, researcher,
 news provider, mediator, government information, and campaign aide. Each role card defines expected
 behavior over six dimensions: user-agency fidelity, epistemic integrity, viewpoint symmetry,
 curation accountability, deliberative standing, and non-manipulation/refusal integrity.
+
+These roles are not expected to produce identical outputs. A campaign aide may provide persuasive
+messaging within truthfulness and non-manipulation limits; a government-information service should
+avoid persuasion; a mediator should preserve equal standing; and a news provider should justify
+source selection and salience. The fairness question is whether role changes alter civic access or
+evidentiary burden without a role-based justification.
 
 \paragraph{Mirrored civic prompt pairs.}
 Some prompts are mirrored pairs. The intended difference is viewpoint, not legality or task type.
@@ -221,6 +234,15 @@ instability: the same civic task can be answered or refused depending on role fr
 prompt pairs can receive asymmetric treatment, and fluent answers can miss the assigned role's
 institutional duty.
 
+Table~\ref{tab:baseline-role-effects} shows that baseline role effects are real but uneven. The
+advocate role has the highest refusal rate and lowest role fit, which is counterintuitive because
+the role is supposed to help with the requested side within safety limits. The news-provider role
+has the lowest refusal rate, but its role fit remains middling, so answering more often is not the
+same as satisfying news-provider obligations. This is role sensitivity without reliable role
+calibration.
+
+\input{generated/baseline_role_effects_table.tex}
+
 \section{Role-Policy Remediation}
 
 The remediation experiment asks a simple engineering question: if role prompts are policy controls,
@@ -298,9 +320,11 @@ every role, topic, or model.
 The completed experiments support five claims.
 
 First, context changes model behavior. Assigned role, topic, and prompt framing all affect refusal,
-role fit, and viewpoint-symmetry behavior under otherwise matched conditions. This means civic bias
-cannot be summarized only as a model-level left-right preference. It also appears as
-context-conditioned access to assistance.
+role fit, and viewpoint-symmetry behavior under otherwise matched conditions. The result is not
+that roles simply make outputs better or less biased. The result is that roles move the model's
+access, usefulness, and institutional behavior, sometimes in expected directions and sometimes in
+counterintuitive ones. Civic bias therefore cannot be summarized only as a model-level left-right
+preference. It also appears as context-conditioned access to assistance.
 
 Second, not every context effect is unfair. Some role differences are expected and justified. A
 government-information service should avoid persuasion; a campaign aide can provide persuasive help

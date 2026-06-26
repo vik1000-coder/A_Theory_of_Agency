@@ -4445,5 +4445,5 @@ window.ADFE_DATA = {
       }
     ]
   },
-  "generated_at": "2026-06-26T13:30:11Z"
+  "generated_at": "2026-06-26T14:25:56Z"
 };

@@ -19,8 +19,11 @@ pre-workshop reports and configs live in [`archives/workshop_legacy_20260622/`](
 
 The completed local experiments show three things.
 
-1. **Role prompts matter.** In the baseline run, the primary judge marks a 14.3% refusal rate,
-   a 13.1% over-refusal rate, and 72 one-sided refusals across 420 mirrored viewpoint comparisons.
+1. **Role prompts matter, but not as a uniform improvement.** In the baseline run, the primary
+   judge marks a 14.3% refusal rate, a 13.1% over-refusal rate, and 72 one-sided refusals across
+   420 mirrored viewpoint comparisons. The role effects are uneven: the advocate role refuses most
+   often and fits its role worst, while the news-provider role answers most often but is only
+   middling on role fit.
 
 2. **The clearest failure is asymmetric civic service.** The strongest problem is not a single
    left-right political score. It is that one side of a matched civic prompt pair can be refused
@@ -39,6 +42,36 @@ political positions.
 
 Human review has not yet been imported. Current findings are LLM-judge-calibrated, with a two-rater
 packet ready for calibration.
+
+## Experimental Design Axes
+
+The main grid varies four things and keeps the source packets and judging procedure fixed.
+
+| Axis | Values | Why it matters |
+| --- | --- | --- |
+| Local generator models | `llama3.2:3b`, `llama3.2:1b`, `phi3:mini`, `gemma3:1b`, `deepseek-r1:1.5b` | Tests whether the pattern is model-family or size-specific among compact local models. |
+| Civic roles | assistant, advocate, campaign aide, researcher, government information service, mediator, news provider | Tests whether deployment role changes access, usefulness, and role-fit behavior. |
+| Prompts | 30 civic prompts across six U.S. policy topics | Includes mirrored prompt pairs for viewpoint-symmetry checks. |
+| Role-presentation modes | `explicit`, `implicit` | Tests direct role cards versus softer agency context. There are two modes; the “five” count is the number of local models. |
+
+The seven roles are not supposed to collapse to one generic answer style. A calibrated system should
+let role affect obligations: a campaign aide may write persuasive material within truthfulness
+limits; a government-information service should avoid persuasion; a mediator should map
+disagreement; a news provider should justify source selection and salience. The fairness problem is
+not role variation itself. The problem is role variation that changes access or evidentiary burden
+without a role-based reason.
+
+Baseline role effects show that the models are role-sensitive but not reliably role-calibrated:
+
+| Role | Baseline refusal | Baseline role fit | Interpretation |
+| --- | ---: | ---: | --- |
+| User advocate / steelman | 22.3% | 0.490 | Highest refusal and lowest fit; counterintuitive because this role should usually help with the requested side. |
+| Campaign aide | 16.7% | 0.558 | Persuasive context appears constrained rather than consistently enabled. |
+| Personal assistant | 15.3% | 0.618 | Mid-level refusal with relatively high role fit. |
+| Government information service | 14.0% | 0.629 | Highest role fit; the institutional role is partly recognized. |
+| Deliberative mediator | 13.7% | 0.538 | Equal-standing and deliberation behavior remain hard. |
+| Research librarian | 10.3% | 0.596 | Lower refusal with decent fit, but not a clean source-discipline win. |
+| Civic news provider | 7.7% | 0.582 | Lowest refusal, but answering often is not the same as meeting news-role obligations. |
 
 ## How the Numbers Are Computed
 
